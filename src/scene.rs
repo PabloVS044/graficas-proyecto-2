@@ -32,6 +32,20 @@ impl Scene {
         closest
     }
 
+    /// Version acotada para los rayos de sombra: solo interesa si hay algo
+    /// entre el punto y la luz, no que hay mas alla de ella.
+    pub fn hit_within(&self, origin: &Vec3, direction: &Vec3, max_distance: f32) -> Intersect {
+        let mut closest = Intersect::empty();
+        for cube in &self.cubes {
+            let hit = cube.ray_intersect(origin, direction);
+            if hit.is_intersecting && hit.distance < closest.distance && hit.distance < max_distance
+            {
+                closest = hit;
+            }
+        }
+        closest
+    }
+
     #[inline]
     pub fn material(&self, id: MaterialId) -> &Material {
         &self.materials[id]
@@ -53,10 +67,13 @@ const BLUE: MaterialId = 3;
 /// Escena de prueba: una plataforma y unas torres.
 pub fn build() -> Scene {
     let materials = vec![
-        Material::new(Vec3::new(0.45, 0.47, 0.45), 0.9),
-        Material::new(Vec3::new(0.80, 0.70, 0.45), 0.9),
-        Material::new(Vec3::new(0.75, 0.25, 0.20), 0.9),
-        Material::new(Vec3::new(0.25, 0.40, 0.75), 0.9),
+        // Piedra mate: apenas brilla y el brillo es ancho.
+        Material::new(Vec3::new(0.45, 0.47, 0.45), [0.90, 0.05, 0.0, 0.0], 8.0),
+        // Arena, todavia mas mate.
+        Material::new(Vec3::new(0.80, 0.70, 0.45), [0.90, 0.02, 0.0, 0.0], 4.0),
+        // Ceramica roja pulida: brillo pequeño y marcado.
+        Material::new(Vec3::new(0.75, 0.25, 0.20), [0.80, 0.45, 0.0, 0.0], 90.0),
+        Material::new(Vec3::new(0.25, 0.40, 0.75), [0.80, 0.45, 0.0, 0.0], 90.0),
     ];
 
     let mut cubes = Vec::new();
