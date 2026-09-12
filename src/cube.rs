@@ -33,6 +33,44 @@ impl Cube {
             material,
         )
     }
+
+    /// Calcula UV y base tangente para un punto sobre la cara `axis`
+    /// (0 = X, 1 = Y, 2 = Z) con signo `positive`.
+    ///
+    /// Con cubos alineados a los ejes esto sale de una tabla en vez de
+    /// interpolar por triangulo: la cara golpeada determina por completo que
+    /// dos coordenadas del punto son `u` y `v`, y en que direccion crecen.
+    ///
+    /// Las orientaciones estan elegidas para que las texturas se vean derechas
+    /// vistas desde afuera: `u` crece hacia la derecha y `v` hacia abajo, que
+    /// es como se guardan los pixeles en un PNG.
+    fn face_uv(&self, point: &Vec3, axis: usize, positive: bool) -> (f32, f32, Vec3, Vec3) {
+        let size = self.max - self.min;
+        let local = point - self.min;
+
+        // Fraccion del punto dentro del cubo en cada eje, en [0, 1].
+        let fx = if size.x != 0.0 { local.x / size.x } else { 0.0 };
+        let fy = if size.y != 0.0 { local.y / size.y } else { 0.0 };
+        let fz = if size.z != 0.0 { local.z / size.z } else { 0.0 };
+
+        let x = Vec3::new(1.0, 0.0, 0.0);
+        let y = Vec3::new(0.0, 1.0, 0.0);
+        let z = Vec3::new(0.0, 0.0, 1.0);
+
+        // Para cada cara: (u, v, direccion de +u, direccion de -v = "arriba").
+        match (axis, positive) {
+            // Cara +X: se ve desde la derecha, Z crece hacia la izquierda visual.
+            (0, true) => (fz, 1.0 - fy, z, y),
+            (0, false) => (1.0 - fz, 1.0 - fy, -z, y),
+            // Cara +Y: la de arriba. Se mira desde el cielo, asi que "arriba"
+            // en la textura corresponde a -Z.
+            (1, true) => (fx, fz, x, -z),
+            (1, false) => (fx, 1.0 - fz, x, z),
+            // Cara +Z: la que mira al frente en la orientacion por defecto.
+            (2, true) => (fx, 1.0 - fy, x, y),
+            _ => (1.0 - fx, 1.0 - fy, -x, y),
+        }
+    }
 }
 
 impl RayIntersect for Cube {
@@ -104,11 +142,17 @@ impl RayIntersect for Cube {
         let mut normal = Vec3::zeros();
         normal[axis] = if positive { 1.0 } else { -1.0 };
 
+        let (u, v, tangent, bitangent) = self.face_uv(&point, axis, positive);
+
         Intersect {
             is_intersecting: true,
             distance: t,
             point,
             normal,
+            tangent,
+            bitangent,
+            u,
+            v,
             material: self.material,
         }
     }

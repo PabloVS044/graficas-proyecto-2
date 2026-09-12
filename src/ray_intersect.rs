@@ -20,8 +20,22 @@ pub struct Intersect {
     /// direccion y la distancia a cada luz.
     pub point: Vec3,
 
-    /// Normal de la cara, apuntando hacia afuera del cubo.
+    /// Normal geometrica de la cara, siempre apuntando hacia **afuera** del
+    /// cubo. Si el rayo viene de adentro (caso de la refraccion) apunta en el
+    /// mismo sentido que el rayo y el sombreador la invierte.
     pub normal: Vec3,
+
+    /// Direccion en la que crece `u` sobre la cara golpeada.
+    pub tangent: Vec3,
+
+    /// Direccion en la que **decrece** `v` sobre la cara, o sea "hacia arriba"
+    /// en la textura. Junto con `tangent` y `normal` forma la base TBN que
+    /// convierte la normal leida del normal map a coordenadas de mundo.
+    pub bitangent: Vec3,
+
+    /// Coordenadas de textura de la cara, en [0, 1].
+    pub u: f32,
+    pub v: f32,
 
     pub material: MaterialId,
 }
@@ -35,6 +49,10 @@ impl Intersect {
             distance: f32::INFINITY,
             point: Vec3::zeros(),
             normal: Vec3::zeros(),
+            tangent: Vec3::zeros(),
+            bitangent: Vec3::zeros(),
+            u: 0.0,
+            v: 0.0,
             material: 0,
         }
     }

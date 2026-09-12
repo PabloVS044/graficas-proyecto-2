@@ -4,12 +4,14 @@ use crate::cube::Cube;
 use crate::light::Light;
 use crate::material::{Material, MaterialId};
 use crate::ray_intersect::{Intersect, RayIntersect};
+use crate::texture::TextureManager;
 use nalgebra_glm::Vec3;
 
 pub struct Scene {
     pub cubes: Vec<Cube>,
     pub materials: Vec<Material>,
     pub lights: Vec<Light>,
+    pub textures: TextureManager,
 
     /// Luz de relleno que llega de todas partes por igual.
     pub ambient: Vec3,
@@ -64,20 +66,65 @@ const SAND: MaterialId = 1;
 const RED: MaterialId = 2;
 const BLUE: MaterialId = 3;
 const MIRROR: MaterialId = 4;
+const GLASS: MaterialId = 5;
+const LAMP: MaterialId = 6;
 
 /// Escena de prueba: una plataforma y unas torres.
 pub fn build() -> Scene {
     let materials = vec![
         // Piedra mate: apenas brilla y el brillo es ancho.
-        Material::new(Vec3::new(0.32, 0.35, 0.33), [0.90, 0.05, 0.0, 0.0], 8.0),
+        Material {
+            albedo: [0.90, 0.05, 0.00, 0.00],
+            specular: 8.0,
+            diffuse: Vec3::new(0.32, 0.35, 0.33),
+            ..Default::default()
+        },
         // Arena, todavia mas mate.
-        Material::new(Vec3::new(0.78, 0.62, 0.30), [0.90, 0.02, 0.0, 0.0], 4.0),
+        Material {
+            albedo: [0.90, 0.02, 0.00, 0.00],
+            specular: 4.0,
+            diffuse: Vec3::new(0.78, 0.62, 0.30),
+            ..Default::default()
+        },
         // Ceramica roja pulida: brillo pequeño y marcado.
-        Material::new(Vec3::new(0.80, 0.12, 0.08), [0.80, 0.45, 0.0, 0.0], 90.0),
-        Material::new(Vec3::new(0.10, 0.28, 0.80), [0.80, 0.45, 0.0, 0.0], 90.0),
+        Material {
+            albedo: [0.80, 0.45, 0.00, 0.00],
+            specular: 90.0,
+            diffuse: Vec3::new(0.80, 0.12, 0.08),
+            ..Default::default()
+        },
+        Material {
+            albedo: [0.80, 0.45, 0.00, 0.00],
+            specular: 90.0,
+            diffuse: Vec3::new(0.10, 0.28, 0.80),
+            ..Default::default()
+        },
         // Metal pulido: casi no tiene color propio, lo que se ve en el es lo
-        // que refleja. De ahi que el difuso sea minimo y la reflexion domine.
-        Material::new(Vec3::new(0.85, 0.87, 0.90), [0.05, 0.60, 0.75, 0.0], 220.0),
+        // que refleja.
+        Material {
+            albedo: [0.05, 0.60, 0.75, 0.00],
+            specular: 220.0,
+            diffuse: Vec3::new(0.85, 0.87, 0.90),
+            ..Default::default()
+        },
+        // Cristal: el grueso de la energia lo transmite. El indice 1.5 es el
+        // del vidrio comun.
+        Material {
+            albedo: [0.05, 0.50, 0.10, 0.85],
+            specular: 250.0,
+            refractive_index: 1.50,
+            diffuse: Vec3::new(0.88, 0.94, 0.92),
+            ..Default::default()
+        },
+        // Material emisivo: no depende de ninguna lampara. La emision pasa de
+        // 1 a proposito, que es justo para lo que servia el tone mapping.
+        Material {
+            albedo: [0.20, 0.05, 0.00, 0.00],
+            specular: 4.0,
+            emission: Vec3::new(2.40, 0.90, 0.25),
+            diffuse: Vec3::new(1.00, 0.70, 0.30),
+            ..Default::default()
+        },
     ];
 
     let mut cubes = Vec::new();
@@ -102,6 +149,16 @@ pub fn build() -> Scene {
         cubes.push(Cube::unit(0, y, -4, MIRROR));
     }
 
+    // Bloque de cristal delante de la torre roja: a traves de el las lineas
+    // rectas del ajedrezado se quiebran, que es como se comprueba que la
+    // refraccion esta desviando los rayos y no solo dejandolos pasar.
+    cubes.push(Cube::unit(-3, 0, 1, GLASS));
+    cubes.push(Cube::unit(-3, 1, 1, GLASS));
+
+    // Bloque emisivo, para ver que ilumina sin necesidad de lampara y que su
+    // sombra no existe.
+    cubes.push(Cube::unit(3, 0, -3, LAMP));
+
     let lights = vec![
         // Luz principal, lejana y sin caida: hace de sol.
         Light::sun(
@@ -117,12 +174,22 @@ pub fn build() -> Scene {
             Vec3::new(1.0, 0.55, 0.25),
             14.0,
         ),
+        // Luz en el mismo sitio que el bloque emisivo: un cubo que brilla pero
+        // no alumbra lo que tiene al lado se ve pegado, como un sticker.
+        Light::new(
+            Vec3::new(3.5, 0.5, -2.5),
+            Vec3::new(1.0, 0.62, 0.28),
+            10.0,
+        ),
     ];
 
     Scene {
         cubes,
         materials,
         lights,
+        // Todavia vacio: los materiales se dibujan con su color plano hasta que
+        // esten los PNG del diorama.
+        textures: TextureManager::new(),
         ambient: Vec3::new(0.05, 0.06, 0.10),
         sky_top: Vec3::new(0.08, 0.22, 0.80),
         sky_bottom: Vec3::new(0.55, 0.68, 0.95),

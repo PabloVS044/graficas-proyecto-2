@@ -6,6 +6,7 @@ mod material;
 mod ray_intersect;
 mod render;
 mod scene;
+mod texture;
 
 use camera::{Camera, CameraFrame};
 use framebuffer::Framebuffer;
