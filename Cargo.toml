@@ -1,0 +1,24 @@
+[package]
+name = "diorama-raytracer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+raylib = { version = "6.0.0", features = [
+    "SUPPORT_IMAGE_GENERATION",
+    "SUPPORT_IMAGE_EXPORT",
+    "SUPPORT_FILEFORMAT_PNG",
+] }
+# Unica dependencia de matematicas: vectores y operaciones basicas.
+# Todo el raytracing (intersecciones, sombras, reflexion, refraccion,
+# normal mapping y el paralelismo) esta escrito a mano con std.
+nalgebra-glm = "0.19"
+
+# El raytracer es tiempo real: sin optimizaciones ni en debug se arrastra.
+[profile.dev]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
