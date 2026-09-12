@@ -1,6 +1,12 @@
+mod camera;
+mod cube;
 mod framebuffer;
+mod ray_intersect;
+mod render;
+mod scene;
 
-use framebuffer::{Framebuffer, encode_pixel};
+use camera::{Camera, CameraFrame};
+use framebuffer::Framebuffer;
 use nalgebra_glm::Vec3;
 use raylib::prelude::*;
 
@@ -8,23 +14,22 @@ const WINDOW_WIDTH: i32 = 960;
 const WINDOW_HEIGHT: i32 = 640;
 
 fn main() {
+    let scene = scene::build();
+
     let (mut rl, thread) = raylib::init()
         .size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .title("Diorama raytracing - proyecto 2")
         .build();
     rl.set_target_fps(60);
 
-    // Degradado de prueba: sirve para comprobar que el orden de los canales y
-    // el de las filas coinciden con lo que espera raylib antes de meter nada de
-    // raytracing.
+    // La escena no cambia todavia, asi que se traza una sola vez al arrancar.
     let mut fb = Framebuffer::new(WINDOW_WIDTH as usize, WINDOW_HEIGHT as usize);
-    for y in 0..fb.height {
-        for x in 0..fb.width {
-            let u = x as f32 / fb.width as f32;
-            let v = y as f32 / fb.height as f32;
-            fb.set(x, y, encode_pixel(Vec3::new(u, v, 0.35)));
-        }
-    }
+    let camera = Camera::new(Vec3::new(9.0, 7.0, 12.0), Vec3::new(0.0, 0.0, 0.0));
+    let frame = CameraFrame::new(&camera, fb.width, fb.height);
+
+    let started = std::time::Instant::now();
+    render::render(&mut fb, &scene, &frame);
+    println!("trazado en {:.2?}", started.elapsed());
 
     let image = Image::gen_image_color(WINDOW_WIDTH, WINDOW_HEIGHT, Color::BLACK);
     let mut texture = rl
@@ -35,6 +40,13 @@ fn main() {
         .expect("el tamaño del framebuffer no coincide con el de la textura");
 
     while !rl.window_should_close() {
+        if rl.is_key_pressed(KeyboardKey::KEY_P) {
+            match fb.save_png("captura.png") {
+                Ok(()) => println!("captura guardada en captura.png"),
+                Err(err) => eprintln!("{err}"),
+            }
+        }
+
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
         d.draw_texture(&texture, 0, 0, Color::WHITE);

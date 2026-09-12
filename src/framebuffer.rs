@@ -33,6 +33,29 @@ impl Framebuffer {
         self.pixels[i..i + 4].copy_from_slice(&rgba);
     }
 
+    /// Guarda el buffer como PNG.
+    pub fn save_png(&self, path: &str) -> Result<(), String> {
+        use raylib::prelude::*;
+
+        let mut image = Image::gen_image_color(self.width as i32, self.height as i32, Color::BLACK);
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let i = (y * self.width + x) * 4;
+                image.draw_pixel(
+                    x as i32,
+                    y as i32,
+                    Color::new(
+                        self.pixels[i],
+                        self.pixels[i + 1],
+                        self.pixels[i + 2],
+                        self.pixels[i + 3],
+                    ),
+                );
+            }
+        }
+        image.export_image(path);
+        Ok(())
+    }
 }
 
 /// Convierte un color en punto flotante a un pixel RGBA de 8 bits.
