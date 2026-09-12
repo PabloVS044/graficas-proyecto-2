@@ -63,6 +63,7 @@ const STONE: MaterialId = 0;
 const SAND: MaterialId = 1;
 const RED: MaterialId = 2;
 const BLUE: MaterialId = 3;
+const MIRROR: MaterialId = 4;
 
 /// Escena de prueba: una plataforma y unas torres.
 pub fn build() -> Scene {
@@ -74,6 +75,9 @@ pub fn build() -> Scene {
         // Ceramica roja pulida: brillo pequeño y marcado.
         Material::new(Vec3::new(0.80, 0.12, 0.08), [0.80, 0.45, 0.0, 0.0], 90.0),
         Material::new(Vec3::new(0.10, 0.28, 0.80), [0.80, 0.45, 0.0, 0.0], 90.0),
+        // Metal pulido: casi no tiene color propio, lo que se ve en el es lo
+        // que refleja. De ahi que el difuso sea minimo y la reflexion domine.
+        Material::new(Vec3::new(0.85, 0.87, 0.90), [0.05, 0.60, 0.75, 0.0], 220.0),
     ];
 
     let mut cubes = Vec::new();
@@ -89,6 +93,14 @@ pub fn build() -> Scene {
     cubes.push(Cube::unit(-2, 1, -2, RED));
     cubes.push(Cube::unit(2, 0, -1, BLUE));
     cubes.push(Cube::unit(0, 0, 2, RED));
+
+    // Columna de espejo: refleja las torres y el ajedrezado del suelo, que es
+    // lo que permite comprobar de un vistazo que el rayo reflejado esta
+    // saliendo con el angulo correcto.
+    for y in 0..3 {
+        cubes.push(Cube::unit(-1, y, -4, MIRROR));
+        cubes.push(Cube::unit(0, y, -4, MIRROR));
+    }
 
     let lights = vec![
         // Luz principal, lejana y sin caida: hace de sol.

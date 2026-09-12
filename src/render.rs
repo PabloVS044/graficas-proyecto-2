@@ -6,6 +6,13 @@ use crate::ray_intersect::EPSILON;
 use crate::scene::Scene;
 use nalgebra_glm::{Vec3, dot, length, normalize, reflect_vec};
 
+/// Rebotes maximos de un rayo.
+///
+/// Cada nivel multiplica el trabajo, asi que conviene mantenerlo bajo. Con 3 ya
+/// se ve un reflejo dentro de otro reflejo, que es todo lo que la escena
+/// necesita para resultar creible.
+pub const MAX_DEPTH: u32 = 3;
+
 /// Desplaza el origen de un rayo secundario para que no vuelva a chocar con la
 /// superficie de la que sale.
 ///
@@ -33,7 +40,13 @@ fn in_shadow(scene: &Scene, point: &Vec3, normal: &Vec3, light_position: &Vec3) 
 }
 
 /// Lanza un rayo y devuelve el color que trae de vuelta.
-pub fn cast_ray(scene: &Scene, origin: &Vec3, direction: &Vec3) -> Vec3 {
+///
+/// `depth` cuenta cuantos rebotes lleva el rayo. Un raytracer es recursivo por
+/// naturaleza: para saber que color refleja un espejo hay que preguntarle a la
+/// escena que se ve en esa direccion, y eso es exactamente la misma operacion
+/// que se estaba haciendo. Lo unico que hace falta es un tope, o un par de
+/// espejos encarados no terminaria nunca.
+pub fn cast_ray(scene: &Scene, origin: &Vec3, direction: &Vec3, depth: u32) -> Vec3 {
     let hit = scene.hit(origin, direction);
     if !hit.is_intersecting {
         return scene.sky(direction);
@@ -80,7 +93,18 @@ pub fn cast_ray(scene: &Scene, origin: &Vec3, direction: &Vec3) -> Vec3 {
     // rebota en la superficie sin penetrarla, asi que conserva el color de la
     // lampara. Es lo que hace que una bola roja tenga un punto de brillo
     // blanco.
-    base * material.albedo[0] + specular * material.albedo[1]
+    let mut color = base * material.albedo[0] + specular * material.albedo[1];
+
+    // Reflexion especular: el rayo rebota con el mismo angulo con el que llego y
+    // lo que traiga de vuelta se suma al color, pesado por `albedo[2]`.
+    if material.albedo[2] > 0.0 && depth < MAX_DEPTH {
+        let reflected_dir = normalize(&reflect_vec(direction, &hit.normal));
+        let reflected_origin = offset_origin(&hit.point, &hit.normal, &reflected_dir);
+        let reflected = cast_ray(scene, &reflected_origin, &reflected_dir, depth + 1);
+        color += reflected * material.albedo[2];
+    }
+
+    color
 }
 
 /// Un raytracer no es mas que un bucle de dos dimensiones que recorre la
@@ -94,7 +118,7 @@ pub fn render(framebuffer: &mut Framebuffer, scene: &Scene, camera: &CameraFrame
             // Se muestrea el centro del pixel, de ahi el 0.5.
             let direction =
                 camera.ray_direction(x as f32 + 0.5, y as f32 + 0.5, width, height);
-            let color = cast_ray(scene, &camera.eye, &direction);
+            let color = cast_ray(scene, &camera.eye, &direction, 0);
             framebuffer.set(x, y, encode_pixel(color));
         }
     }
