@@ -4,6 +4,7 @@
 //! interseccion, que se resuelve con el metodo de slabs sin resolver ninguna
 //! ecuacion cuadratica.
 
+use crate::material::MaterialId;
 use crate::ray_intersect::{EPSILON, Intersect, RayIntersect};
 use nalgebra_glm::Vec3;
 
@@ -11,25 +12,25 @@ use nalgebra_glm::Vec3;
 pub struct Cube {
     pub min: Vec3,
     pub max: Vec3,
-    pub color: Vec3,
+    pub material: MaterialId,
 }
 
 impl Cube {
     /// Cubo definido por su esquina minima y su tamaño en cada eje.
-    pub fn new(min: Vec3, size: Vec3, color: Vec3) -> Self {
+    pub fn new(min: Vec3, size: Vec3, material: MaterialId) -> Self {
         Cube {
             min,
             max: min + size,
-            color,
+            material,
         }
     }
 
     /// Cubo unitario cuya esquina minima es la celda entera `(x, y, z)`.
-    pub fn unit(x: i32, y: i32, z: i32, color: Vec3) -> Self {
+    pub fn unit(x: i32, y: i32, z: i32, material: MaterialId) -> Self {
         Cube::new(
             Vec3::new(x as f32, y as f32, z as f32),
             Vec3::new(1.0, 1.0, 1.0),
-            color,
+            material,
         )
     }
 }
@@ -90,6 +91,8 @@ impl RayIntersect for Cube {
             return Intersect::empty();
         };
 
+        let point = origin + direction * t;
+
         // La cara golpeada es la del lado contrario al que apunta el rayo
         // cuando entra, y la del mismo lado cuando sale.
         let positive = if entering {
@@ -104,8 +107,9 @@ impl RayIntersect for Cube {
         Intersect {
             is_intersecting: true,
             distance: t,
+            point,
             normal,
-            color: self.color,
+            material: self.material,
         }
     }
 }

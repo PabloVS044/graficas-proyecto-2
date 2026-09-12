@@ -1,6 +1,8 @@
 mod camera;
 mod cube;
 mod framebuffer;
+mod light;
+mod material;
 mod ray_intersect;
 mod render;
 mod scene;

@@ -1,5 +1,6 @@
 //! Resultado de intersectar un rayo con un objeto y el rasgo que lo produce.
 
+use crate::material::MaterialId;
 use nalgebra_glm::Vec3;
 
 /// Desplazamiento minimo que se aplicara al origen de los rayos secundarios
@@ -15,10 +16,14 @@ pub struct Intersect {
     /// enfrente, sin z-buffer ni ordenar nada a mano.
     pub distance: f32,
 
+    /// Punto de impacto en coordenadas de mundo. Hace falta para medir la
+    /// direccion y la distancia a cada luz.
+    pub point: Vec3,
+
     /// Normal de la cara, apuntando hacia afuera del cubo.
     pub normal: Vec3,
 
-    pub color: Vec3,
+    pub material: MaterialId,
 }
 
 impl Intersect {
@@ -28,8 +33,9 @@ impl Intersect {
         Intersect {
             is_intersecting: false,
             distance: f32::INFINITY,
+            point: Vec3::zeros(),
             normal: Vec3::zeros(),
-            color: Vec3::zeros(),
+            material: 0,
         }
     }
 }

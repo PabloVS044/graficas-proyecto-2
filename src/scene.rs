@@ -1,11 +1,19 @@
-//! La escena: geometria y cielo.
+//! La escena: geometria, materiales, luces y cielo.
 
 use crate::cube::Cube;
+use crate::light::Light;
+use crate::material::{Material, MaterialId};
 use crate::ray_intersect::{Intersect, RayIntersect};
 use nalgebra_glm::Vec3;
 
 pub struct Scene {
     pub cubes: Vec<Cube>,
+    pub materials: Vec<Material>,
+    pub lights: Vec<Light>,
+
+    /// Luz de relleno que llega de todas partes por igual.
+    pub ambient: Vec3,
+
     /// Colores del degradado del cielo: lo que ve un rayo que no choca con nada.
     pub sky_top: Vec3,
     pub sky_bottom: Vec3,
@@ -25,37 +33,68 @@ impl Scene {
     }
 
     #[inline]
+    pub fn material(&self, id: MaterialId) -> &Material {
+        &self.materials[id]
+    }
+
+    #[inline]
     pub fn sky(&self, direction: &Vec3) -> Vec3 {
         let t = (direction.y * 0.5 + 0.5).clamp(0.0, 1.0);
         self.sky_bottom * (1.0 - t) + self.sky_top * t
     }
 }
 
-/// Escena de prueba: una plataforma y unas torres, para comprobar que las
-/// intersecciones resuelven bien que cubo tapa a cual y que las caras salen
-/// orientadas como deben.
+// Indices de los materiales dentro de `Scene::materials`.
+const STONE: MaterialId = 0;
+const SAND: MaterialId = 1;
+const RED: MaterialId = 2;
+const BLUE: MaterialId = 3;
+
+/// Escena de prueba: una plataforma y unas torres.
 pub fn build() -> Scene {
-    let grey = Vec3::new(0.45, 0.47, 0.45);
-    let red = Vec3::new(0.75, 0.25, 0.20);
-    let blue = Vec3::new(0.25, 0.40, 0.75);
-    let sand = Vec3::new(0.80, 0.70, 0.45);
+    let materials = vec![
+        Material::new(Vec3::new(0.45, 0.47, 0.45), 0.9),
+        Material::new(Vec3::new(0.80, 0.70, 0.45), 0.9),
+        Material::new(Vec3::new(0.75, 0.25, 0.20), 0.9),
+        Material::new(Vec3::new(0.25, 0.40, 0.75), 0.9),
+    ];
 
     let mut cubes = Vec::new();
 
     for x in -4..5 {
         for z in -4..5 {
-            let color = if (x + z) % 2 == 0 { grey } else { sand };
-            cubes.push(Cube::unit(x, -1, z, color));
+            let material = if (x + z) % 2 == 0 { STONE } else { SAND };
+            cubes.push(Cube::unit(x, -1, z, material));
         }
     }
 
-    cubes.push(Cube::unit(-2, 0, -2, red));
-    cubes.push(Cube::unit(-2, 1, -2, red));
-    cubes.push(Cube::unit(2, 0, -1, blue));
-    cubes.push(Cube::unit(0, 0, 2, red));
+    cubes.push(Cube::unit(-2, 0, -2, RED));
+    cubes.push(Cube::unit(-2, 1, -2, RED));
+    cubes.push(Cube::unit(2, 0, -1, BLUE));
+    cubes.push(Cube::unit(0, 0, 2, RED));
+
+    let lights = vec![
+        // Luz principal, lejana y sin caida: hace de sol.
+        Light::sun(
+            Vec3::new(12.0, 14.0, 8.0),
+            Vec3::new(1.0, 0.96, 0.90),
+            1.0,
+        ),
+        // Lampara calida y cercana, esta si con caida cuadratica. Sirve para
+        // comprobar que la atenuacion se nota: solo ilumina lo que tiene al
+        // lado.
+        Light::new(
+            Vec3::new(1.5, 1.5, 2.5),
+            Vec3::new(1.0, 0.55, 0.25),
+            9.0,
+        ),
+    ];
 
     Scene {
         cubes,
+        materials,
+        lights,
+        ambient: Vec3::new(0.12, 0.13, 0.18),
         sky_top: Vec3::new(0.20, 0.32, 0.60),
         sky_bottom: Vec3::new(0.70, 0.75, 0.85),
     }
