@@ -58,10 +58,28 @@ impl Framebuffer {
     }
 }
 
-/// Convierte un color en punto flotante a un pixel RGBA de 8 bits.
+/// Convierte un color lineal en punto flotante a un pixel RGBA de 8 bits.
+///
+/// Dos pasos, y ninguno es cosmetico:
+///
+/// - **Tone mapping de Reinhard**, `c / (1 + c)`. El calculo de luz no esta
+///   acotado a 1: basta con que dos lamparas se solapen para pasarse, y los
+///   materiales emisivos que vienen despues lo van a hacer siempre. Recortando
+///   en 1, todo lo brillante se aplana a blanco puro y se pierde el detalle.
+///   Reinhard comprime el rango alto de forma continua, asi que un valor de 5 y
+///   uno de 20 siguen siendo distinguibles.
+///
+/// - **Correccion gamma**, exponente 1/2.2. Sumar y multiplicar luz solo tiene
+///   sentido en espacio lineal, pero la pantalla interpreta los valores como
+///   sRGB. Sin este paso la imagen se ve mucho mas oscura de lo que deberia,
+///   sobre todo en los medios tonos.
 #[inline]
 pub fn encode_pixel(color: nalgebra_glm::Vec3) -> [u8; 4] {
-    let channel = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let channel = |c: f32| {
+        let c = c.max(0.0);
+        let mapped = c / (1.0 + c);
+        (mapped.powf(1.0 / 2.2) * 255.0).round().clamp(0.0, 255.0) as u8
+    };
     [
         channel(color.x),
         channel(color.y),

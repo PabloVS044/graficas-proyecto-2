@@ -68,12 +68,12 @@ const BLUE: MaterialId = 3;
 pub fn build() -> Scene {
     let materials = vec![
         // Piedra mate: apenas brilla y el brillo es ancho.
-        Material::new(Vec3::new(0.45, 0.47, 0.45), [0.90, 0.05, 0.0, 0.0], 8.0),
+        Material::new(Vec3::new(0.32, 0.35, 0.33), [0.90, 0.05, 0.0, 0.0], 8.0),
         // Arena, todavia mas mate.
-        Material::new(Vec3::new(0.80, 0.70, 0.45), [0.90, 0.02, 0.0, 0.0], 4.0),
+        Material::new(Vec3::new(0.78, 0.62, 0.30), [0.90, 0.02, 0.0, 0.0], 4.0),
         // Ceramica roja pulida: brillo pequeño y marcado.
-        Material::new(Vec3::new(0.75, 0.25, 0.20), [0.80, 0.45, 0.0, 0.0], 90.0),
-        Material::new(Vec3::new(0.25, 0.40, 0.75), [0.80, 0.45, 0.0, 0.0], 90.0),
+        Material::new(Vec3::new(0.80, 0.12, 0.08), [0.80, 0.45, 0.0, 0.0], 90.0),
+        Material::new(Vec3::new(0.10, 0.28, 0.80), [0.80, 0.45, 0.0, 0.0], 90.0),
     ];
 
     let mut cubes = Vec::new();
@@ -95,7 +95,7 @@ pub fn build() -> Scene {
         Light::sun(
             Vec3::new(12.0, 14.0, 8.0),
             Vec3::new(1.0, 0.96, 0.90),
-            1.0,
+            1.5,
         ),
         // Lampara calida y cercana, esta si con caida cuadratica. Sirve para
         // comprobar que la atenuacion se nota: solo ilumina lo que tiene al
@@ -103,7 +103,7 @@ pub fn build() -> Scene {
         Light::new(
             Vec3::new(1.5, 1.5, 2.5),
             Vec3::new(1.0, 0.55, 0.25),
-            9.0,
+            14.0,
         ),
     ];
 
@@ -111,8 +111,8 @@ pub fn build() -> Scene {
         cubes,
         materials,
         lights,
-        ambient: Vec3::new(0.12, 0.13, 0.18),
-        sky_top: Vec3::new(0.20, 0.32, 0.60),
-        sky_bottom: Vec3::new(0.70, 0.75, 0.85),
+        ambient: Vec3::new(0.05, 0.06, 0.10),
+        sky_top: Vec3::new(0.08, 0.22, 0.80),
+        sky_bottom: Vec3::new(0.55, 0.68, 0.95),
     }
 }
