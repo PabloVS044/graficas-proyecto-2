@@ -42,6 +42,11 @@ AMBIENTCG = {
     "planks": ("Planks012", 0.45, True),
     "lava": ("Lava005", 0.34, True),
     "obsidian": ("Marble006", 0.30, False),
+    # Bark012 y no Bark006: la corteza de aquella es de grano tan fino que al
+    # reducirla a 32x32 no quedaba estructura, solo grietas sueltas que se veian
+    # como un garabato. Esta tiene la veta en surcos verticales grandes, que son
+    # los que sobreviven a la reduccion tanto en el color como en el relieve.
+    "log": ("Bark012", 0.20, True),
 }
 
 # Algunas fuentes vienen con un color que no encaja en la escena. Bark006 es
@@ -64,6 +69,8 @@ AMBIENTCG = {
 # El tinte se aplica al final, para llevar el resultado al tono que pide la
 # escena.
 AJUSTES = {
+    # La corteza viene verdosa por el musgo. Se desatura y se tiñe de marron.
+    "log": (0.35, 0.60, (1.35, 1.00, 0.62)),
     # Rock064 tiene mucho musgo amarillo verdoso, hasta el punto de que el
     # acantilado no se leia como piedra. Desaturada queda roca gris con
     # manchas mas oscuras.
@@ -77,14 +84,6 @@ KENNEY = {
     "grass": "grass_top.png",
     "dirt": "dirt.png",
     "leaves": "leaves.png",
-    # El tronco viene de Kenney y no de ambientCG a proposito. Bark006 es una
-    # fotografia de corteza real: su relieve es fino y esta por todas partes, y
-    # reducida a 32x32 no queda estructura que leer, solo grietas oscuras
-    # sueltas que al lado del pasto liso se ven como un garabato. La de Kenney
-    # esta dibujada para un bloque, con la veta en lineas verticales que
-    # sobreviven al tamaño. Pierde el mapa de normales, pero quedan cuatro
-    # materiales con relieve y la rubrica pide uno.
-    "log": "trunk_side.png",
     "sand": "sand.png",
     "water": "water.png",
     "glass": "glass_frame.png",
@@ -105,6 +104,7 @@ FUERZA_NORMAL = 2.6
 # reconocibles, y ahi la exageracion es justo lo que los hace legibles.
 FUERZA_NORMAL_POR_TEXTURA = {
     "stone": 1.8,
+    "log": 2.2,
 }
 
 
