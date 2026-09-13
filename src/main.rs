@@ -34,7 +34,6 @@ const QUALITY_LEVELS: &[(i32, u32)] = &[(8, 1), (4, 1), (2, 1), (1, 1), (1, 2)];
 const ORBIT_SPEED: f32 = 1.4; // radianes por segundo
 const ZOOM_SPEED: f32 = 1.9; // factor por segundo
 const PAN_SPEED: f32 = 3.0;
-const AUTO_ROTATE_SPEED: f32 = 0.35;
 
 /// Un nivel de calidad ya reservado: su framebuffer en CPU y su textura en GPU.
 struct RenderTarget {
@@ -124,7 +123,6 @@ fn main() {
         .collect();
 
     let mut camera = Camera::new(scene.focus, 30.0);
-    let mut auto_rotate = true;
     let mut show_hud = true;
 
     // Nivel que se va a dibujar este frame. Empieza en el mas burdo y sube
@@ -138,7 +136,7 @@ fn main() {
     let mut last_ms = 0.0f64;
 
     println!("hilos de render: {threads}");
-    println!("controles: flechas/AD = rotar | W,S o rueda = zoom | Q,E = subir/bajar | R = auto-giro | P = captura PNG | H = HUD");
+    println!("controles: flechas/AD = rotar | W,S o rueda = zoom | Q,E = subir/bajar | P = captura PNG | H = HUD");
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -160,15 +158,8 @@ fn main() {
             d_pitch -= ORBIT_SPEED * dt;
         }
 
-        if rl.is_key_pressed(KeyboardKey::KEY_R) {
-            auto_rotate = !auto_rotate;
-        }
         if rl.is_key_pressed(KeyboardKey::KEY_H) {
             show_hud = !show_hud;
-        }
-
-        if auto_rotate {
-            d_yaw += AUTO_ROTATE_SPEED * dt;
         }
 
         camera.orbit(d_yaw, d_pitch);
@@ -276,7 +267,7 @@ fn main() {
             d.draw_rectangle(0, 0, WINDOW_WIDTH, 52, Color::new(0, 0, 0, 150));
             d.draw_text(&hud, 12, 10, 18, Color::RAYWHITE);
             d.draw_text(
-                "flechas/AD rotar  W/S zoom  Q/E altura  R auto-giro  P captura  H HUD",
+                "flechas/AD rotar   W/S zoom   Q/E altura   P captura   H HUD",
                 12,
                 32,
                 14,

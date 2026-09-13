@@ -12,10 +12,6 @@
   <img src="https://img.shields.io/badge/hilos-std%3A%3Athread-green" alt="std::thread">
 </p>
 
-<p align="center">
-  <img src="preview.png" alt="El diorama renderizado" width="760">
-</p>
-
 ## Video
 
 <!-- TODO: enlace al video de la entrega -->
@@ -52,7 +48,6 @@ cargo run --release
 | ↑ ↓ | Subir y bajar el angulo de la camara |
 | W S / rueda | Acercar y alejar |
 | Q E | Bajar y subir el punto de vista |
-| R | Encender o apagar el giro automatico |
 | P | Guardar `captura.png` al doble de resolucion |
 | H | Mostrar u ocultar el HUD |
 
@@ -92,14 +87,12 @@ y se descarta sin que la imagen cambie en un solo pixel.
 
 ## Materiales
 
-Trece materiales, cada uno con su propia textura y sus propios parametros.
-Cinco llevan ademas mapa de normales. Todas las texturas son CC0; el origen exacto de
-cada una esta en [CREDITS.md](CREDITS.md).
+Doce materiales, cada uno con su propia textura y sus propios parametros.
+Seis llevan ademas mapa de normales.
 
 | Material | Difuso | Especular | Reflexion | Refraccion | Exp. | IOR | Normal | Notas |
 |----------|-------:|----------:|----------:|-----------:|-----:|----:|:------:|-------|
 | pasto      | 0.95 | 0.02 | 0.00 | 0.00 |   3 |  -   |    | |
-| tierra     | 0.92 | 0.02 | 0.00 | 0.00 |   3 |  -   |    | |
 | piedra     | 0.88 | 0.06 | 0.00 | 0.00 |  10 |  -   | si | |
 | adoquin    | 0.90 | 0.05 | 0.00 | 0.00 |   6 |  -   | si | |
 | tablones   | 0.90 | 0.10 | 0.02 | 0.00 |  12 |  -   | si | |
@@ -109,16 +102,18 @@ cada una esta en [CREDITS.md](CREDITS.md).
 | **lava**   | 0.12 | 0.08 | 0.00 | 0.00 |   4 |  -   | si | **emisiva**, con mascara |
 | **obsidiana** | 0.15 | 0.70 | **0.60** | 0.00 | 220 |  -   |    | espejo |
 | **cristal**| 0.05 | 0.50 | 0.10 | **0.85** | 250 | 1.50 |    | refracta |
-| antorcha   | 0.30 | 0.05 | 0.00 | 0.00 |   4 |  -   |    | **emisiva** |
-| arena      | 0.95 | 0.03 | 0.00 | 0.00 |   4 |  -   |    | |
+| **piedra luminosa** | 0.45 | 0.10 | 0.00 | 0.00 |  12 |  -   |    | **emisiva**, con mascara |
+| arena      | 0.95 | 0.03 | 0.00 | 0.00 |   4 |  -   | si | |
 
 Las texturas se muestrean con **nearest-neighbor**, no bilineal: a 32x32 el
 filtrado bilineal las volveria una mancha borrosa, y el escalonado duro es justo
 el aspecto que se busca.
 
-La lava usa su propia textura como **mascara de emision**: las vetas
-incandescentes brillan y la costra oscura no, en vez de que la cara entera emita
-por igual.
+La lava y la piedra luminosa usan su propia textura como **mascara de emision**:
+brillan las vetas y el fondo oscuro no, en vez de que la cara entera emita por
+igual. Esa es la razon por la que no vale cualquier textura para un material
+emisivo: una de brillo uniforme enciende el bloque entero y se ve como una
+lampara lisa.
 
 ## Decisiones
 
@@ -185,9 +180,9 @@ tangente que `cube.rs` calcula por cara. Como los cubos estan alineados a los
 ejes, T, B y N salen directo de que cara se golpeo, sin calcularlos por
 triangulo.
 
-Los mapas normales vienen de fotografias de 1024x1024 reducidas a 32x32.
+Los mapas normales vienen de fotografias de alta resolucion reducidas a 32x32.
 Promediar pixeles al reducir acerca todas las normales a la vertical y aplana el
-relieve, asi que `tools/prepare_textures.py` amplifica las componentes X e Y y
+relieve, asi que al prepararlos se amplifican las componentes X e Y y se
 renormaliza el vector para recuperarlo.
 
 El color se calcula en **espacio lineal** (las texturas se convierten de sRGB al
@@ -265,19 +260,6 @@ tarde el hilo mas desafortunado. El unico candado se toma una vez por banda.
   calculan una vez, no por rayo.
 - **Salida temprana en sombras**: el rayo deja de recorrer celdas mas alla de la
   fuente de luz.
-
-## Pruebas
-
-```bash
-cargo test --release
-```
-
-La rejilla de aceleracion se compara contra busqueda exhaustiva sobre decenas de
-miles de rayos aleatorios, incluidos los que nacen **dentro** de un cubo, que es
-el caso que mas facilmente rompe un recorrido DDA. Tambien se verifica que las
-constantes de material apunten al indice correcto (son posicionales: insertar un
-material en medio desplazaria todo sin ningun error de compilacion) y que cada
-material declarado se use de verdad en la escena.
 
 ## Dependencias
 

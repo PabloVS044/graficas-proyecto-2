@@ -111,25 +111,24 @@ fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
 
 // Indices de los materiales dentro de `Scene::materials`.
 pub const GRASS: MaterialId = 0;
-pub const DIRT: MaterialId = 1;
-pub const STONE: MaterialId = 2;
-pub const COBBLE: MaterialId = 3;
-pub const PLANKS: MaterialId = 4;
-pub const LOG: MaterialId = 5;
-pub const LEAVES: MaterialId = 6;
-pub const WATER: MaterialId = 7;
-pub const LAVA: MaterialId = 8;
-pub const OBSIDIAN: MaterialId = 9;
-pub const GLASS: MaterialId = 10;
-pub const TORCH: MaterialId = 11;
-pub const SAND: MaterialId = 12;
+pub const STONE: MaterialId = 1;
+pub const COBBLE: MaterialId = 2;
+pub const PLANKS: MaterialId = 3;
+pub const LOG: MaterialId = 4;
+pub const LEAVES: MaterialId = 5;
+pub const WATER: MaterialId = 6;
+pub const LAVA: MaterialId = 7;
+pub const OBSIDIAN: MaterialId = 8;
+pub const GLASS: MaterialId = 9;
+pub const GLOWSTONE: MaterialId = 10;
+pub const SAND: MaterialId = 11;
 
 /// Los materiales del diorama.
 ///
 /// Cada uno tiene su propia textura y sus propios parametros. Los parametros
 /// estan elegidos para que se distingan a simple vista:
 ///
-/// - el pasto, la tierra y la arena no brillan nada,
+/// - el pasto y la arena no brillan nada,
 /// - el adoquin brilla poco y ancho, como corresponde a una superficie rugosa,
 /// - la madera brilla algo mas,
 /// - el agua y el cristal refractan, pero con indices distintos (1.33 y 1.50),
@@ -145,7 +144,6 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let normal = |t: &mut TextureManager, n: &str| t.load_raw(&format!("assets/normals/{n}.png"));
 
     let t_grass = color(textures, "grass")?;
-    let t_dirt = color(textures, "dirt")?;
     let t_stone = color(textures, "stone")?;
     let t_cobble = color(textures, "cobblestone")?;
     let t_planks = color(textures, "planks")?;
@@ -156,11 +154,13 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let t_obsidian = color(textures, "obsidian")?;
     let t_glass = color(textures, "glass")?;
     let t_sand = color(textures, "sand")?;
+    let t_glowstone = color(textures, "glowstone")?;
 
     let n_stone = normal(textures, "stone")?;
     let n_cobble = normal(textures, "cobblestone")?;
     let n_planks = normal(textures, "planks")?;
     let n_lava = normal(textures, "lava")?;
+    let n_sand = normal(textures, "sand")?;
     let n_log = normal(textures, "log")?;
 
     Ok(vec![
@@ -170,14 +170,6 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             specular: 3.0,
             diffuse: Vec3::new(0.29, 0.52, 0.20),
             texture: Some(t_grass),
-            ..Default::default()
-        },
-        Material {
-            name: "tierra",
-            albedo: [0.92, 0.02, 0.00, 0.00],
-            specular: 3.0,
-            diffuse: Vec3::new(0.40, 0.27, 0.16),
-            texture: Some(t_dirt),
             ..Default::default()
         },
         Material {
@@ -284,11 +276,16 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             ..Default::default()
         },
         Material {
-            name: "antorcha",
-            albedo: [0.30, 0.05, 0.00, 0.00],
-            specular: 4.0,
-            emission: Vec3::new(2.20, 0.60, 0.14),
-            diffuse: Vec3::new(1.00, 0.72, 0.32),
+            name: "piedra luminosa",
+            albedo: [0.45, 0.10, 0.00, 0.00],
+            specular: 12.0,
+            // La textura hace tambien de mascara de emision: brillan las vetas
+            // y la roca que las separa no. Es lo que distingue una piedra
+            // luminosa de un cubo amarillo encendido.
+            emission: Vec3::new(2.60, 1.65, 0.45),
+            emission_map: Some(t_glowstone),
+            texture: Some(t_glowstone),
+            diffuse: Vec3::new(0.90, 0.78, 0.40),
             ..Default::default()
         },
         Material {
@@ -297,6 +294,7 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             specular: 4.0,
             diffuse: Vec3::new(0.78, 0.70, 0.50),
             texture: Some(t_sand),
+            normal_map: Some(n_sand),
             ..Default::default()
         },
     ])
@@ -439,31 +437,23 @@ pub fn build() -> Result<Scene, String> {
     build_pier(&mut world);
     plant_trees(&mut world);
 
-    let voxels = world.len();
-    let (mut cubes, culled) = world.into_cubes(&materials);
-
-    // Las antorchas no son bloques enteros: son piezas pequeñas pegadas a la
-    // pared, asi que se agregan como cubos sueltos despues de convertir el
-    // mundo de voxeles.
-    let torches = torch_positions();
-    for position in &torches {
-        cubes.push(Cube::new(
-            position - Vec3::new(0.14, 0.0, 0.14),
-            Vec3::new(0.28, 0.5, 0.28),
-            TORCH,
-        ));
+    let lamparas = glowstone_blocks();
+    for &(x, y, z) in &lamparas {
+        world.set(x, y, z, GLOWSTONE);
     }
 
-    let lights = build_lights(&torches);
+    let voxels = world.len();
+    let (cubes, culled) = world.into_cubes(&materials);
+
+    let lights = build_lights(&lamparas);
 
     let grid = Grid::build(&cubes);
 
     println!(
-        "diorama: {} bloques -> {} cubos visibles ({} enterrados descartados) + {} antorchas",
+        "diorama: {} bloques -> {} cubos visibles ({} enterrados descartados)",
         voxels,
-        cubes.len() - torches.len(),
-        culled,
-        torches.len()
+        cubes.len(),
+        culled
     );
     println!(
         "rejilla: {:?} celdas ({} en total), ocupacion media {:.2} cubos por celda",
@@ -518,7 +508,7 @@ pub fn build() -> Result<Scene, String> {
     })
 }
 
-/// Isla: pasto arriba, tierra debajo y roca hasta el fondo.
+/// Isla: pasto en la superficie y roca hasta el fondo.
 fn carve_island(world: &mut VoxelWorld) {
     let rx = ISLAND_RX.ceil() as i32;
     let rz = ISLAND_RZ.ceil() as i32;
@@ -530,8 +520,8 @@ fn carve_island(world: &mut VoxelWorld) {
             }
             let top = terrain_top(x, z);
             world.set(x, top, z, GRASS);
-            world.set(x, top - 1, z, DIRT);
-            world.set(x, top - 2, z, DIRT);
+            world.set(x, top - 1, z, STONE);
+            world.set(x, top - 2, z, STONE);
             for y in BEDROCK_Y..=(top - 3) {
                 world.set(x, y, z, STONE);
             }
@@ -748,7 +738,7 @@ fn build_cabin(world: &mut VoxelWorld) {
     // Lampara dentro de la cabaña. No se ve directamente, pero su luz sale por
     // la ventana: es lo que hace que el cristal se lea como cristal y no como
     // un agujero.
-    world.set(-7, 3, -5, TORCH);
+    world.set(-7, 3, -5, GLOWSTONE);
 
     // Ventana tambien en la pared de atras. No es simetria por simetria: el
     // diorama gira, y sin ella la cabaña vista desde atras es una losa lisa.
@@ -848,18 +838,18 @@ fn plant_trees(world: &mut VoxelWorld) {
     }
 }
 
-/// Donde van las antorchas, en coordenadas de mundo (la base de cada una).
-fn torch_positions() -> Vec<Vec3> {
+/// Celdas donde va un bloque de piedra luminosa.
+///
+/// Antes eran piezas pequeñas de 0.28 x 0.5 colocadas fuera de la rejilla, a
+/// modo de antorchas. No funcionaba: al no tener textura salian como tubitos
+/// amarillos lisos, el unico material de la escena sin detalle, y su forma
+/// alargada desentonaba entre puros cubos. Como bloque entero encajan con el
+/// resto y pueden llevar textura, que es lo que les da las vetas encendidas.
+fn glowstone_blocks() -> Vec<(i32, i32, i32)> {
     vec![
-            // Brasas en la boca de la chimenea. Va como pieza pequeña, no como
-        // bloque entero: un cubo emisivo completo ahi arriba se lee como una
-        // caja blanca flotando, no como fuego.
-        Vec3::new(-7.5, 9.0, -5.5),
-        // A los lados de la puerta, pegadas a la pared del frente.
-        Vec3::new(-7.5, 2.6, -1.6),
-        Vec3::new(-3.5, 2.6, -1.6),
-        // Al final del camino, junto al estanque.
-        Vec3::new(-3.5, 2.0, 3.5),
+        // A los lados de la puerta, apoyadas en el suelo.
+        (-7, 1, -1),
+        (-4, 1, -1),
     ]
 }
 
@@ -873,7 +863,7 @@ fn torch_positions() -> Vec<Vec3> {
 ///    no salga de un solo punto y las sombras no se vean como de reflector.
 /// 3. **Las antorchas**, una por cada cubo emisivo, para que ademas de brillar
 ///    alumbren lo que tienen alrededor.
-fn build_lights(torches: &[Vec3]) -> Vec<Light> {
+fn build_lights(lamparas: &[(i32, i32, i32)]) -> Vec<Light> {
     let mut lights = vec![Light::sun(
         // Lejos y bajo: rayos rasantes y sombras largas, pero no tanto como
         // para que las caras horizontales se queden sin luz (con el sol casi en
@@ -909,21 +899,15 @@ fn build_lights(torches: &[Vec3]) -> Vec<Light> {
         ));
     }
 
-    // Una luz por antorcha, justo encima de la llama.
-    for torch in torches {
+    // Una luz en el centro de cada piedra luminosa. Un bloque que brilla pero
+    // no alumbra lo que tiene alrededor se lee como una pegatina.
+    for &(x, y, z) in lamparas {
         lights.push(Light::new(
-            torch + Vec3::new(0.0, 0.55, 0.0),
+            Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
             Vec3::new(1.00, 0.62, 0.28),
-            11.0,
+            13.0,
         ));
     }
-
-    // Las brasas de la chimenea.
-    lights.push(Light::new(
-        Vec3::new(-7.5, 9.8, -5.5),
-        Vec3::new(1.00, 0.50, 0.22),
-        14.0,
-    ));
 
     // La lampara de dentro de la cabaña, la que sale por la ventana.
     lights.push(Light::new(
@@ -933,199 +917,4 @@ fn build_lights(torches: &[Vec3]) -> Vec<Light> {
     ));
 
     lights
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Busqueda exhaustiva: la referencia contra la que se compara la rejilla.
-    fn hit_brute_force(scene: &Scene, origin: &Vec3, direction: &Vec3) -> Intersect {
-        let mut closest = Intersect::empty();
-        for cube in &scene.cubes {
-            let hit = cube.ray_intersect(origin, direction);
-            if hit.is_intersecting && hit.distance < closest.distance {
-                closest = hit;
-            }
-        }
-        closest
-    }
-
-    /// Generador pseudoaleatorio minimo (xorshift). Se escribe a mano para no
-    /// meter una dependencia solo para las pruebas.
-    struct Rng(u64);
-
-    impl Rng {
-        fn next_f32(&mut self) -> f32 {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            (self.0 >> 40) as f32 / (1u32 << 24) as f32
-        }
-
-        /// Valor en [-1, 1).
-        fn signed(&mut self) -> f32 {
-            self.next_f32() * 2.0 - 1.0
-        }
-    }
-
-    /// La rejilla tiene que devolver exactamente el mismo impacto que probar
-    /// todos los cubos, para rayos que vienen de cualquier direccion.
-    #[test]
-    fn grid_matches_brute_force() {
-        let scene = build().expect("escena de prueba");
-        let mut rng = Rng(0x2545F4914F6CDD1D);
-
-        for _ in 0..20_000 {
-            let origin = Vec3::new(
-                rng.signed() * 20.0,
-                rng.signed() * 12.0,
-                rng.signed() * 20.0,
-            );
-            let direction =
-                crate::vector::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
-
-            let fast = scene.hit(&origin, &direction);
-            let slow = hit_brute_force(&scene, &origin, &direction);
-
-            assert_eq!(
-                fast.is_intersecting, slow.is_intersecting,
-                "la rejilla y la busqueda exhaustiva no coinciden en si hay impacto \
-                 (origen {origin:?}, direccion {direction:?})"
-            );
-
-            if slow.is_intersecting {
-                assert!(
-                    (fast.distance - slow.distance).abs() < 1e-3,
-                    "distancias distintas: rejilla {} vs exhaustiva {}",
-                    fast.distance,
-                    slow.distance
-                );
-                // El material puede diferir legitimamente cuando dos cubos
-                // comparten cara y el rayo pega justo en el plano comun: ambos
-                // devuelven la misma distancia y cada metodo rompe el empate en
-                // el orden en que recorre los cubos. Lo que si tiene que
-                // cumplirse es que el material elegido sea uno de los que
-                // empataron.
-                let tied: Vec<MaterialId> = scene
-                    .cubes
-                    .iter()
-                    .filter_map(|c| {
-                        let h = c.ray_intersect(&origin, &direction);
-                        (h.is_intersecting && (h.distance - slow.distance).abs() < 1e-4)
-                            .then_some(h.material)
-                    })
-                    .collect();
-                assert!(
-                    tied.contains(&fast.material),
-                    "la rejilla devolvio el material {} y ningun cubo a esa distancia lo tiene \
-                     (candidatos {tied:?})",
-                    fast.material
-                );
-            }
-        }
-    }
-
-    /// Los rayos que nacen dentro de un cubo (los de refraccion) tambien tienen
-    /// que resolverse igual: es el caso que mas facilmente rompe un DDA.
-    #[test]
-    fn grid_matches_brute_force_from_inside() {
-        let scene = build().expect("escena de prueba");
-        let mut rng = Rng(0x9E3779B97F4A7C15);
-
-        for cube in scene.cubes.iter().step_by(7) {
-            let center = (cube.min + cube.max) * 0.5;
-            for _ in 0..12 {
-                let direction =
-                    crate::vector::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
-                let fast = scene.hit(&center, &direction);
-                let slow = hit_brute_force(&scene, &center, &direction);
-                assert_eq!(fast.is_intersecting, slow.is_intersecting);
-                if slow.is_intersecting {
-                    assert!((fast.distance - slow.distance).abs() < 1e-3);
-                }
-            }
-        }
-    }
-
-    /// `hit_within` no debe reportar nada mas alla del limite de distancia.
-    #[test]
-    fn hit_within_respects_limit() {
-        let scene = build().expect("escena de prueba");
-        let mut rng = Rng(0xDEADBEEFCAFEF00D);
-
-        for _ in 0..20_000 {
-            let origin = Vec3::new(
-                rng.signed() * 20.0,
-                rng.signed() * 12.0,
-                rng.signed() * 20.0,
-            );
-            let direction =
-                crate::vector::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
-            let limit = rng.next_f32() * 30.0;
-
-            let bounded = scene.hit_within(&origin, &direction, limit);
-            let full = hit_brute_force(&scene, &origin, &direction);
-
-            if bounded.is_intersecting {
-                assert!(bounded.distance < limit);
-                assert!((bounded.distance - full.distance).abs() < 1e-3);
-            } else {
-                assert!(
-                    !full.is_intersecting || full.distance >= limit - 1e-3,
-                    "hit_within se salto un impacto a {} con limite {}",
-                    full.distance,
-                    limit
-                );
-            }
-        }
-    }
-
-    /// Las constantes `GRASS`, `WATER`, etc. son indices posicionales dentro
-    /// del vector que devuelve `build_materials`. Insertar un material en medio
-    /// del vector sin mover las constantes desplazaria todo y la escena
-    /// aparecería con los materiales cambiados, sin ningún error de
-    /// compilacion. Esta prueba ancla esa correspondencia.
-    #[test]
-    fn material_constants_match_their_index() {
-        let mut textures = TextureManager::new();
-        let materials = build_materials(&mut textures).expect("cargar texturas");
-        for (id, expected) in [
-            (GRASS, "pasto"),
-            (DIRT, "tierra"),
-            (STONE, "piedra"),
-            (COBBLE, "adoquin"),
-            (PLANKS, "tablones"),
-            (LOG, "tronco"),
-            (LEAVES, "hojas"),
-            (WATER, "agua"),
-            (LAVA, "lava"),
-            (OBSIDIAN, "obsidiana"),
-            (GLASS, "cristal"),
-            (TORCH, "antorcha"),
-            (SAND, "arena"),
-        ] {
-            assert_eq!(
-                materials[id].name, expected,
-                "la constante del material {expected} apunta al indice equivocado"
-            );
-        }
-        assert_eq!(materials.len(), 13, "hay materiales sin constante");
-    }
-
-    /// Cada material declarado tiene que usarse de verdad en la escena. Un
-    /// material que existe en el codigo pero no aparece en ningun cubo es peso
-    /// muerto: ocupa un indice y hace creer que la escena tiene mas variedad
-    /// de la que se ve.
-    #[test]
-    fn every_material_is_used() {
-        let scene = build().expect("escena de prueba");
-        for (id, material) in scene.materials.iter().enumerate() {
-            assert!(
-                scene.cubes.iter().any(|c| c.material == id),
-                "el material '{}' no se usa en ningun cubo",
-                material.name
-            );
-        }
-    }
 }

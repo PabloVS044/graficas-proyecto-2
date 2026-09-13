@@ -11,3 +11,6 @@ captura.png
 
 # Descargas originales de las texturas (varios cientos de MB)
 /dowloads
+
+# Herramienta de conversion de texturas: no forma parte del raytracer
+/tools
