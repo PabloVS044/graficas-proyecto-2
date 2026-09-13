@@ -1,3 +1,4 @@
+mod accel;
 mod camera;
 mod cube;
 mod framebuffer;
@@ -56,6 +57,46 @@ fn main() {
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
+
+    // Modo sin ventana: traza una orbita completa a una secuencia de PNG.
+    if std::env::args().any(|a| a == "--orbit") {
+        render_orbit(&scene, threads);
+        return;
+    }
+
+    // Modo sin ventana: traza un solo cuadro a PNG y sale. Sirve para probar
+    // el motor sin entorno grafico y para generar los cuadros del video.
+    if std::env::args().any(|a| a == "--snapshot") {
+        let env = |name: &str, fallback: f32| {
+            std::env::var(name)
+                .ok()
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(fallback)
+        };
+        let mut fb = Framebuffer::new(
+            env("SNAP_W", WINDOW_WIDTH as f32) as usize,
+            env("SNAP_H", WINDOW_HEIGHT as f32) as usize,
+        );
+        let focus = nalgebra_glm::Vec3::new(
+            env("CAM_FX", scene.focus.x),
+            env("CAM_FY", scene.focus.y),
+            env("CAM_FZ", scene.focus.z),
+        );
+        let mut camera = Camera::new(focus, env("CAM_DIST", 30.0));
+        camera.yaw = env("CAM_YAW", camera.yaw);
+        camera.pitch = env("CAM_PITCH", camera.pitch);
+        let frame = CameraFrame::new(&camera, fb.width, fb.height);
+        let started = std::time::Instant::now();
+        render::render(&mut fb, &scene, &frame, env("SNAP_SAMPLES", 2.0) as u32, threads);
+        println!("trazado en {:.2?} con {threads} hilos", started.elapsed());
+        let out = std::env::var("SNAP_OUT").unwrap_or_else(|_| "snapshot.png".to_string());
+        if let Err(err) = fb.save_png(&out) {
+            eprintln!("{err}");
+            std::process::exit(1);
+        }
+        println!("guardado en {out}");
+        return;
+    }
 
     let (mut rl, thread) = raylib::init()
         .size(WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -242,4 +283,77 @@ fn main() {
             );
         }
     }
+}
+
+/// Traza una vuelta completa alrededor del diorama y la guarda como una
+/// secuencia de PNG en `frames/`.
+///
+/// Es lo que alimenta el video de la entrega. Se hace sin ventana a proposito:
+/// grabando la pantalla se captura lo que el refinamiento progresivo alcance a
+/// producir en cada instante, asi que los cuadros saldrian de calidades
+/// distintas. Aqui cada cuadro se traza completo antes de pasar al siguiente.
+///
+/// La trayectoria combina los dos movimientos: una vuelta entera de rotacion y
+/// dos ciclos de acercamiento y alejamiento, desfasados respecto a la rotacion
+/// para que se vean como movimientos separados y no como uno solo.
+fn render_orbit(scene: &scene::Scene, threads: usize) {
+    use std::f32::consts::TAU;
+
+    let env_num = |name: &str, fallback: f32| {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(fallback)
+    };
+
+    let frames = env_num("ORBIT_FRAMES", 240.0) as usize;
+    let width = env_num("ORBIT_WIDTH", WINDOW_WIDTH as f32) as usize;
+    let height = env_num("ORBIT_HEIGHT", WINDOW_HEIGHT as f32) as usize;
+    let samples = env_num("ORBIT_SAMPLES", 2.0) as u32;
+    let near = env_num("ORBIT_NEAR", 17.0);
+    let far = env_num("ORBIT_FAR", 33.0);
+
+    if let Err(err) = std::fs::create_dir_all("frames") {
+        eprintln!("no se pudo crear el directorio frames/: {err}");
+        std::process::exit(1);
+    }
+
+    let mut framebuffer = Framebuffer::new(width, height);
+    let mut camera = Camera::new(scene.focus, far);
+
+    println!("trazando {frames} cuadros de {width}x{height} con {samples}x{samples} muestras");
+    let started = std::time::Instant::now();
+
+    for index in 0..frames {
+        let t = index as f32 / frames as f32;
+
+        camera.yaw = TAU * t;
+        // Dos ciclos de zoom por vuelta. El coseno arranca y termina en el mismo
+        // punto, asi que el video se puede repetir en bucle sin salto.
+        let zoom = 0.5 - 0.5 * (TAU * 2.0 * t).cos();
+        camera.distance = far + (near - far) * zoom;
+        // La altura tambien se mueve, desfasada un cuarto de ciclo, para que la
+        // camara no describa un circulo plano.
+        camera.pitch = 0.42 + 0.24 * (TAU * t).sin();
+
+        let frame = CameraFrame::new(&camera, width, height);
+        render::render(&mut framebuffer, scene, &frame, samples, threads);
+
+        let path = format!("frames/{index:04}.png");
+        if let Err(err) = framebuffer.save_png(&path) {
+            eprintln!("{err}");
+            std::process::exit(1);
+        }
+
+        if index % 10 == 0 || index + 1 == frames {
+            let done = index + 1;
+            let elapsed = started.elapsed().as_secs_f32();
+            let remaining = elapsed / done as f32 * (frames - done) as f32;
+            println!("  {done}/{frames}  ({elapsed:.0}s transcurridos, ~{remaining:.0}s restantes)");
+        }
+    }
+
+    println!("listo en {:.1?}", started.elapsed());
+    println!("para armar el video:");
+    println!("  ffmpeg -framerate 30 -i frames/%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 diorama.mp4");
 }

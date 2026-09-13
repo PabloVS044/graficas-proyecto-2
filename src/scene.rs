@@ -3,6 +3,7 @@
 //! `Scene` se construye una sola vez al arrancar y despues solo se lee, por eso
 //! se puede compartir entre todos los hilos del render con una simple `&Scene`.
 
+use crate::accel::Grid;
 use crate::cube::Cube;
 use crate::light::Light;
 use crate::material::{Material, MaterialId};
@@ -28,36 +29,50 @@ pub struct Scene {
 
     /// Punto alrededor del cual conviene orbitar la camara.
     pub focus: Vec3,
+
+    /// Rejilla de aceleracion. Se construye una vez a partir de `cubes` y es lo
+    /// que evita probar el rayo contra la escena entera.
+    pub grid: Grid,
 }
 
 impl Scene {
     /// Impacto mas cercano del rayo contra la escena.
     ///
-    /// Prueba el rayo contra todos los cubos, uno por uno. Es correcto pero
-    /// lineal: el costo crece con el numero de cubos multiplicado por el numero
-    /// de rayos.
+    /// Recorre solo las celdas que el rayo atraviesa, de cerca a lejos, y
+    /// prueba unicamente los cubos registrados en ellas. La rejilla corta el
+    /// recorrido en cuanto el mejor impacto queda dentro de la celda actual.
     pub fn hit(&self, origin: &Vec3, direction: &Vec3) -> Intersect {
         let mut closest = Intersect::empty();
-        for cube in &self.cubes {
-            let hit = cube.ray_intersect(origin, direction);
-            if hit.is_intersecting && hit.distance < closest.distance {
-                closest = hit;
-            }
-        }
+        self.grid
+            .traverse(origin, direction, f32::INFINITY, |items| {
+                for &index in items {
+                    let hit = self.cubes[index as usize].ray_intersect(origin, direction);
+                    if hit.is_intersecting && hit.distance < closest.distance {
+                        closest = hit;
+                    }
+                }
+                closest.distance
+            });
         closest
     }
 
-    /// Version acotada para los rayos de sombra: solo interesa lo que este
-    /// entre el punto y la luz.
+    /// Version acotada para rayos de sombra: solo interesa lo que este entre el
+    /// punto y la luz. El limite de distancia se le pasa a la rejilla, que asi
+    /// deja de recorrer celdas mas alla de la fuente.
     pub fn hit_within(&self, origin: &Vec3, direction: &Vec3, max_distance: f32) -> Intersect {
         let mut closest = Intersect::empty();
-        for cube in &self.cubes {
-            let hit = cube.ray_intersect(origin, direction);
-            if hit.is_intersecting && hit.distance < closest.distance && hit.distance < max_distance
-            {
-                closest = hit;
+        self.grid.traverse(origin, direction, max_distance, |items| {
+            for &index in items {
+                let hit = self.cubes[index as usize].ray_intersect(origin, direction);
+                if hit.is_intersecting
+                    && hit.distance < closest.distance
+                    && hit.distance < max_distance
+                {
+                    closest = hit;
+                }
             }
-        }
+            closest.distance
+        });
         closest
     }
 
@@ -386,6 +401,8 @@ pub fn build() -> Result<Scene, String> {
 
     let lights = build_lights(&torches);
 
+    let grid = Grid::build(&cubes);
+
     println!(
         "diorama: {} bloques -> {} cubos visibles ({} enterrados descartados) + {} antorchas",
         voxels,
@@ -393,6 +410,13 @@ pub fn build() -> Result<Scene, String> {
         culled,
         torches.len()
     );
+    println!(
+        "rejilla: {:?} celdas ({} en total), ocupacion media {:.2} cubos por celda",
+        grid.dims(),
+        grid.cell_count(),
+        grid.average_occupancy()
+    );
+
     println!("\nmateriales:");
     println!(
         "  {:<10} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}  {}",
@@ -435,6 +459,7 @@ pub fn build() -> Result<Scene, String> {
         sky_horizon: Vec3::new(0.95, 0.42, 0.20),
         sky_bottom: Vec3::new(0.10, 0.08, 0.10),
         focus: Vec3::new(-1.0, 1.5, 0.0),
+        grid,
     })
 }
 
@@ -821,6 +846,148 @@ fn build_lights(torches: &[Vec3]) -> Vec<Light> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Busqueda exhaustiva: la referencia contra la que se compara la rejilla.
+    fn hit_brute_force(scene: &Scene, origin: &Vec3, direction: &Vec3) -> Intersect {
+        let mut closest = Intersect::empty();
+        for cube in &scene.cubes {
+            let hit = cube.ray_intersect(origin, direction);
+            if hit.is_intersecting && hit.distance < closest.distance {
+                closest = hit;
+            }
+        }
+        closest
+    }
+
+    /// Generador pseudoaleatorio minimo (xorshift). Se escribe a mano para no
+    /// meter una dependencia solo para las pruebas.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next_f32(&mut self) -> f32 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 >> 40) as f32 / (1u32 << 24) as f32
+        }
+
+        /// Valor en [-1, 1).
+        fn signed(&mut self) -> f32 {
+            self.next_f32() * 2.0 - 1.0
+        }
+    }
+
+    /// La rejilla tiene que devolver exactamente el mismo impacto que probar
+    /// todos los cubos, para rayos que vienen de cualquier direccion.
+    #[test]
+    fn grid_matches_brute_force() {
+        let scene = build().expect("escena de prueba");
+        let mut rng = Rng(0x2545F4914F6CDD1D);
+
+        for _ in 0..20_000 {
+            let origin = Vec3::new(
+                rng.signed() * 20.0,
+                rng.signed() * 12.0,
+                rng.signed() * 20.0,
+            );
+            let direction =
+                nalgebra_glm::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
+
+            let fast = scene.hit(&origin, &direction);
+            let slow = hit_brute_force(&scene, &origin, &direction);
+
+            assert_eq!(
+                fast.is_intersecting, slow.is_intersecting,
+                "la rejilla y la busqueda exhaustiva no coinciden en si hay impacto \
+                 (origen {origin:?}, direccion {direction:?})"
+            );
+
+            if slow.is_intersecting {
+                assert!(
+                    (fast.distance - slow.distance).abs() < 1e-3,
+                    "distancias distintas: rejilla {} vs exhaustiva {}",
+                    fast.distance,
+                    slow.distance
+                );
+                // El material puede diferir legitimamente cuando dos cubos
+                // comparten cara y el rayo pega justo en el plano comun: ambos
+                // devuelven la misma distancia y cada metodo rompe el empate en
+                // el orden en que recorre los cubos. Lo que si tiene que
+                // cumplirse es que el material elegido sea uno de los que
+                // empataron.
+                let tied: Vec<MaterialId> = scene
+                    .cubes
+                    .iter()
+                    .filter_map(|c| {
+                        let h = c.ray_intersect(&origin, &direction);
+                        (h.is_intersecting && (h.distance - slow.distance).abs() < 1e-4)
+                            .then_some(h.material)
+                    })
+                    .collect();
+                assert!(
+                    tied.contains(&fast.material),
+                    "la rejilla devolvio el material {} y ningun cubo a esa distancia lo tiene \
+                     (candidatos {tied:?})",
+                    fast.material
+                );
+            }
+        }
+    }
+
+    /// Los rayos que nacen dentro de un cubo (los de refraccion) tambien tienen
+    /// que resolverse igual: es el caso que mas facilmente rompe un DDA.
+    #[test]
+    fn grid_matches_brute_force_from_inside() {
+        let scene = build().expect("escena de prueba");
+        let mut rng = Rng(0x9E3779B97F4A7C15);
+
+        for cube in scene.cubes.iter().step_by(7) {
+            let center = (cube.min + cube.max) * 0.5;
+            for _ in 0..12 {
+                let direction =
+                    nalgebra_glm::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
+                let fast = scene.hit(&center, &direction);
+                let slow = hit_brute_force(&scene, &center, &direction);
+                assert_eq!(fast.is_intersecting, slow.is_intersecting);
+                if slow.is_intersecting {
+                    assert!((fast.distance - slow.distance).abs() < 1e-3);
+                }
+            }
+        }
+    }
+
+    /// `hit_within` no debe reportar nada mas alla del limite de distancia.
+    #[test]
+    fn hit_within_respects_limit() {
+        let scene = build().expect("escena de prueba");
+        let mut rng = Rng(0xDEADBEEFCAFEF00D);
+
+        for _ in 0..20_000 {
+            let origin = Vec3::new(
+                rng.signed() * 20.0,
+                rng.signed() * 12.0,
+                rng.signed() * 20.0,
+            );
+            let direction =
+                nalgebra_glm::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
+            let limit = rng.next_f32() * 30.0;
+
+            let bounded = scene.hit_within(&origin, &direction, limit);
+            let full = hit_brute_force(&scene, &origin, &direction);
+
+            if bounded.is_intersecting {
+                assert!(bounded.distance < limit);
+                assert!((bounded.distance - full.distance).abs() < 1e-3);
+            } else {
+                assert!(
+                    !full.is_intersecting || full.distance >= limit - 1e-3,
+                    "hit_within se salto un impacto a {} con limite {}",
+                    full.distance,
+                    limit
+                );
+            }
+        }
+    }
 
     /// Las constantes `GRASS`, `WATER`, etc. son indices posicionales dentro
     /// del vector que devuelve `build_materials`. Insertar un material en medio

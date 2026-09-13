@@ -3,21 +3,22 @@
 use crate::material::MaterialId;
 use nalgebra_glm::Vec3;
 
-/// Desplazamiento minimo que se aplicara al origen de los rayos secundarios
-/// para que no vuelvan a chocar con la superficie de la que salen.
+/// Desplazamiento minimo que se aplica al origen de los rayos secundarios.
+///
+/// Sin esto, un rayo de sombra o de reflexion que nace exactamente sobre la
+/// superficie vuelve a chocar con ella por error de redondeo y la imagen se
+/// llena de puntos negros ("shadow acne").
 pub const EPSILON: f32 = 1e-3;
 
-/// Todo lo que hace falta saber del punto donde pego el rayo.
+/// Todo lo que el sombreador necesita saber del punto donde pego el rayo.
 #[derive(Debug, Clone, Copy)]
 pub struct Intersect {
     pub is_intersecting: bool,
 
-    /// Distancia desde el origen del rayo. Es lo que resuelve que objeto queda
-    /// enfrente, sin z-buffer ni ordenar nada a mano.
+    /// Distancia desde el origen del rayo. Resuelve que objeto queda enfrente.
     pub distance: f32,
 
-    /// Punto de impacto en coordenadas de mundo. Hace falta para medir la
-    /// direccion y la distancia a cada luz.
+    /// Punto de impacto en coordenadas de mundo.
     pub point: Vec3,
 
     /// Normal geometrica de la cara, siempre apuntando hacia **afuera** del
