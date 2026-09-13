@@ -44,7 +44,7 @@ AMBIENTCG = {
     # Recorte muy cerrado: Bark006 es corteza de grano fino, no de surcos
     # grandes. A 0.26 la reduccion a 32x32 no dejaba estructura alguna, solo
     # ruido por pixel, y el tronco se veia como una mancha moteada.
-    "log": ("Bark006", 0.10, True),
+    "log": ("Bark006", 0.14, True),
     "obsidian": ("Marble006", 0.30, False),
 }
 
@@ -52,24 +52,32 @@ AMBIENTCG = {
 # corteza clara y grisacea, y un tronco tiene que leerse marron junto a las
 # hojas verdes. El tinte multiplica el color sin tocar la estructura ni el mapa
 # normal, que es lo que interesa conservar.
-# Ajustes de color por textura: (saturacion, tinte).
+# Ajustes de color por textura: (saturacion, contraste, tinte).
 #
 # La saturacion mezcla el pixel con su propio gris: 1.0 lo deja igual, 0.0 lo
 # vuelve blanco y negro. Hace falta porque el verde de Kenney es un verde puro
 # (R=28, G=149) sin nada de tierra, y multiplicarlo solo lo oscurece sin quitarle
-# el aspecto de neon. El tinte se aplica despues, para llevar el resultado hacia
-# el tono que pide la escena.
+# el aspecto de neon.
+#
+# El contraste separa o acerca los pixeles respecto a la media de la textura.
+# Hace falta porque una fotografia de superficie real trae un rango de valores
+# mucho mayor del que pide un bloque: la corteza tenia grietas casi negras sobre
+# madera muy clara y, al lado del pasto liso y los tablones parejos, se leia como
+# un garabato en vez de como madera.
+#
+# El tinte se aplica al final, para llevar el resultado al tono que pide la
+# escena.
 AJUSTES = {
     # La corteza es gris y esta cubierta de liquen naranja. Se desatura para
     # quitar el moteado del liquen y luego se tiñe de marron, que es el color
     # que pide un tronco junto a las hojas verdes.
-    "log": (0.35, (1.50, 1.05, 0.68)),
+    "log": (0.35, 0.50, (1.15, 0.82, 0.55)),
     # Rock064 tiene mucho musgo amarillo verdoso, hasta el punto de que el
     # acantilado no se leia como piedra. Desaturada queda roca gris con
     # manchas mas oscuras.
-    "stone": (0.40, (1.02, 1.00, 0.98)),
-    "grass": (0.55, (1.00, 0.86, 0.66)),
-    "leaves": (0.60, (0.92, 0.84, 0.62)),
+    "stone": (0.40, 0.75, (1.02, 1.00, 0.98)),
+    "grass": (0.55, 1.00, (1.00, 0.86, 0.66)),
+    "leaves": (0.60, 1.00, (0.92, 0.84, 0.62)),
 }
 
 # Nombre destino -> archivo dentro del zip de Kenney.
@@ -89,6 +97,17 @@ KENNEY_ZIP = "kenney_voxel-pack.zip"
 # relieve se aplana casi por completo.
 FUERZA_NORMAL = 2.6
 
+# Algunas superficies necesitan menos. La corteza tiene relieve por todas partes
+# y a grano muy fino: con la fuerza general, cada texel quedaba orientado hacia
+# un lado distinto y el tronco se veia como un garabato de luces y sombras, mucho
+# mas ruidoso que el pasto liso o los tablones parejos que tiene al lado. El
+# adoquin o los tablones, en cambio, tienen relieve en formas grandes y
+# reconocibles, y ahi la exageracion es justo lo que los hace legibles.
+FUERZA_NORMAL_POR_TEXTURA = {
+    "log": 1.1,
+    "stone": 1.8,
+}
+
 
 def recortar_y_reducir(imagen: Image.Image, recorte: float, filtro) -> Image.Image:
     """Toma la fraccion central de la imagen y la reduce a LADO x LADO."""
@@ -102,7 +121,7 @@ def recortar_y_reducir(imagen: Image.Image, recorte: float, filtro) -> Image.Ima
     return recortada.resize((LADO, LADO), filtro)
 
 
-def procesar_normal(imagen: Image.Image, recorte: float) -> Image.Image:
+def procesar_normal(imagen: Image.Image, recorte: float, fuerza: float) -> Image.Image:
     """Reduce un mapa normal conservando el relieve.
 
     Dos cuidados que el color no necesita:
@@ -119,8 +138,8 @@ def procesar_normal(imagen: Image.Image, recorte: float) -> Image.Image:
     # De [0, 255] al rango [-1, 1] en el que vive el vector.
     v = np.asarray(reducida, dtype=np.float32) / 255.0 * 2.0 - 1.0
 
-    v[..., 0] *= FUERZA_NORMAL
-    v[..., 1] *= FUERZA_NORMAL
+    v[..., 0] *= fuerza
+    v[..., 1] *= fuerza
 
     # Renormalizar: sin esto el vector deja de ser unitario y el sombreado
     # saldria mas claro u oscuro de lo que toca.
@@ -131,8 +150,10 @@ def procesar_normal(imagen: Image.Image, recorte: float) -> Image.Image:
     return Image.fromarray(((v + 1.0) * 0.5 * 255.0).astype(np.uint8))
 
 
-def ajustar_color(imagen: Image.Image, saturacion: float, tinte) -> Image.Image:
-    """Desatura hacia el gris y luego multiplica por un tinte."""
+def ajustar_color(
+    imagen: Image.Image, saturacion: float, contraste: float, tinte
+) -> Image.Image:
+    """Desatura, comprime el contraste y aplica un tinte, en ese orden."""
     v = np.asarray(imagen, dtype=np.float32)
 
     # Luminancia percibida: el verde pesa mucho mas que el rojo y el azul
@@ -141,6 +162,12 @@ def ajustar_color(imagen: Image.Image, saturacion: float, tinte) -> Image.Image:
         axis=2, keepdims=True
     )
     v = gris + (v - gris) * saturacion
+
+    # Contraste alrededor de la media de la propia textura, para no desplazar su
+    # brillo general al comprimirla.
+    media = v.mean()
+    v = media + (v - media) * contraste
+
     v *= np.array(tinte, dtype=np.float32)
 
     return Image.fromarray(np.clip(v, 0, 255).astype(np.uint8))
@@ -174,7 +201,8 @@ def main() -> None:
 
         if tiene_normal:
             normal = leer_del_zip(ruta_zip, "_NormalGL.png")
-            procesar_normal(normal, recorte).save(NORMALES / f"{destino}.png")
+            fuerza = FUERZA_NORMAL_POR_TEXTURA.get(destino, FUERZA_NORMAL)
+            procesar_normal(normal, recorte, fuerza).save(NORMALES / f"{destino}.png")
             estado = "color + normal"
 
         print(f"  {destino:12} <- {asset:18} ({estado})")
