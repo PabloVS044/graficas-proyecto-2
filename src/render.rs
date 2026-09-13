@@ -284,18 +284,96 @@ pub fn cast_ray(scene: &Scene, origin: &Vec3, direction: &Vec3, depth: u32) -> V
     color
 }
 
-/// Un raytracer no es mas que un bucle de dos dimensiones que recorre la
-/// pantalla lanzando un rayo por pixel.
-pub fn render(framebuffer: &mut Framebuffer, scene: &Scene, camera: &CameraFrame) {
-    let width = framebuffer.width as f32;
-    let height = framebuffer.height as f32;
+// ---------------------------------------------------------------------------
+// Render paralelo
+// ---------------------------------------------------------------------------
 
-    for y in 0..framebuffer.height {
-        for x in 0..framebuffer.width {
-            // Se muestrea el centro del pixel, de ahi el 0.5.
-            let direction = camera.ray_direction(x as f32 + 0.5, y as f32 + 0.5, width, height);
-            let color = cast_ray(scene, &camera.eye, &direction, 0);
-            framebuffer.set(x, y, encode_pixel(color));
+/// Traza la imagen completa repartiendo las filas entre hilos.
+///
+/// Por que asi y no de otra forma: cada pixel es independiente de los demas
+/// (no comparten estado, no hay orden), asi que basta con partir el buffer en
+/// bandas horizontales disjuntas con `chunks_mut` y repartirlas. Cada banda es
+/// una rebanada `&mut [u8]` distinta, por lo que el compilador garantiza que no
+/// hay dos hilos escribiendo el mismo pixel: cero sincronizacion dentro del
+/// bucle de pixeles.
+///
+/// Las bandas no se reparten de antemano sino que los hilos las van tomando de
+/// una cola conforme se desocupan (*work stealing*). Importa porque el costo
+/// por banda es muy desigual: la franja donde esta el cristal dispara rayos de
+/// refraccion y reflexion, mientras que la del cielo vacio se resuelve al
+/// primer rebote. Con reparto fijo el frame duraria lo que tarde el hilo mas
+/// desafortunado. El unico candado se toma una vez por banda, no por pixel.
+///
+/// `std::thread::scope` permite que los hilos tomen prestada la `&Scene` sin
+/// envolverla en un `Arc`, porque garantiza que todos terminan antes de que la
+/// funcion regrese.
+pub fn render(
+    framebuffer: &mut Framebuffer,
+    scene: &Scene,
+    camera: &CameraFrame,
+    samples_per_axis: u32,
+    threads: usize,
+) {
+    let width = framebuffer.width;
+    let height = framebuffer.height;
+    let row_bytes = framebuffer.row_bytes();
+
+    // Varias bandas por hilo: mientras mas finas, mejor se reparte la carga,
+    // pero mas veces se toma el candado. ~8 por hilo es un punto intermedio.
+    let target_bands = (threads * 8).max(1);
+    let rows_per_band = height.div_ceil(target_bands).max(1);
+
+    let fwidth = width as f32;
+    let fheight = height as f32;
+    let samples = samples_per_axis.max(1);
+    let inv_samples = 1.0 / (samples * samples) as f32;
+
+    // Cola de trabajo: (fila inicial, rebanada del buffer). En orden inverso
+    // para que `pop` entregue las bandas de arriba hacia abajo.
+    let queue: Vec<(usize, &mut [u8])> = framebuffer
+        .pixels
+        .chunks_mut(rows_per_band * row_bytes)
+        .enumerate()
+        .map(|(i, band)| (i * rows_per_band, band))
+        .rev()
+        .collect();
+    let queue = std::sync::Mutex::new(queue);
+
+    std::thread::scope(|scope| {
+        for _ in 0..threads.max(1) {
+            scope.spawn(|| {
+                loop {
+                    // Se toma la siguiente banda libre y se suelta el candado
+                    // de inmediato: el trazado ocurre fuera de la seccion
+                    // critica.
+                    let next = queue.lock().unwrap().pop();
+                    let Some((y0, band)) = next else { break };
+
+                    let rows = band.len() / row_bytes;
+                    for row in 0..rows {
+                        let y = y0 + row;
+                        for x in 0..width {
+                            let mut accum = Vec3::zeros();
+
+                            // Supersampling: varias muestras dentro del pixel,
+                            // promediadas. Es lo que quita el escalonado en los
+                            // bordes de los cubos.
+                            for sy in 0..samples {
+                                for sx in 0..samples {
+                                    let px = x as f32 + (sx as f32 + 0.5) / samples as f32;
+                                    let py = y as f32 + (sy as f32 + 0.5) / samples as f32;
+                                    let dir = camera.ray_direction(px, py, fwidth, fheight);
+                                    accum += cast_ray(scene, &camera.eye, &dir, 0);
+                                }
+                            }
+
+                            let rgba = encode_pixel(accum * inv_samples);
+                            let i = row * row_bytes + x * 4;
+                            band[i..i + 4].copy_from_slice(&rgba);
+                        }
+                    }
+                }
+            });
         }
-    }
+    });
 }

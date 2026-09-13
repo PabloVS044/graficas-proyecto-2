@@ -1,8 +1,9 @@
 //! Cubo alineado a los ejes (AABB): la unica primitiva del diorama.
 //!
-//! Todo va a estar hecho de cubos, como en Minecraft. Eso simplifica la
-//! interseccion, que se resuelve con el metodo de slabs sin resolver ninguna
-//! ecuacion cuadratica.
+//! Todo el diorama son cubos, como en Minecraft. Eso simplifica dos cosas:
+//! la interseccion se resuelve con el metodo de slabs (muy barato) y las
+//! coordenadas de textura salen directo de la cara golpeada, sin necesidad de
+//! parametrizar una superficie curva.
 
 use crate::material::MaterialId;
 use crate::ray_intersect::{EPSILON, Intersect, RayIntersect};
@@ -25,25 +26,12 @@ impl Cube {
         }
     }
 
-    /// Cubo unitario cuya esquina minima es la celda entera `(x, y, z)`.
-    pub fn unit(x: i32, y: i32, z: i32, material: MaterialId) -> Self {
-        Cube::new(
-            Vec3::new(x as f32, y as f32, z as f32),
-            Vec3::new(1.0, 1.0, 1.0),
-            material,
-        )
-    }
-
     /// Calcula UV y base tangente para un punto sobre la cara `axis`
     /// (0 = X, 1 = Y, 2 = Z) con signo `positive`.
     ///
-    /// Con cubos alineados a los ejes esto sale de una tabla en vez de
-    /// interpolar por triangulo: la cara golpeada determina por completo que
-    /// dos coordenadas del punto son `u` y `v`, y en que direccion crecen.
-    ///
     /// Las orientaciones estan elegidas para que las texturas se vean derechas
-    /// vistas desde afuera: `u` crece hacia la derecha y `v` hacia abajo, que
-    /// es como se guardan los pixeles en un PNG.
+    /// vistas desde afuera: `u` crece hacia la derecha y `v` crece hacia abajo,
+    /// que es como se guardan los pixeles en un PNG.
     fn face_uv(&self, point: &Vec3, axis: usize, positive: bool) -> (f32, f32, Vec3, Vec3) {
         let size = self.max - self.min;
         let local = point - self.min;
@@ -76,9 +64,9 @@ impl Cube {
 impl RayIntersect for Cube {
     fn ray_intersect(&self, origin: &Vec3, direction: &Vec3) -> Intersect {
         // Metodo de slabs: el cubo es la interseccion de tres pares de planos
-        // paralelos. Para cada eje se calcula en que intervalo del parametro t
-        // el rayo esta dentro de ese par, y el rayo toca el cubo solo donde los
-        // tres intervalos se traslapan.
+        // paralelos. Para cada eje se calcula en que intervalo de t el rayo
+        // esta dentro de ese par, y el rayo toca el cubo solo donde los tres
+        // intervalos se traslapan.
         let mut t_near = f32::NEG_INFINITY;
         let mut t_far = f32::INFINITY;
         let mut near_axis = 0usize;
@@ -90,14 +78,16 @@ impl RayIntersect for Cube {
             let (lo, hi) = (self.min[axis], self.max[axis]);
 
             if d.abs() < 1e-8 {
-                // Rayo paralelo a este par de planos: o siempre esta dentro del
-                // slab, o nunca toca el cubo.
+                // Rayo paralelo a este par de planos: o siempre esta dentro
+                // del slab, o nunca toca el cubo.
                 if o < lo || o > hi {
                     return Intersect::empty();
                 }
                 continue;
             }
 
+            // 1/d puede ser infinito; los productos siguen dando el signo
+            // correcto, por eso no hace falta un caso especial.
             let inv = 1.0 / d;
             let mut t1 = (lo - o) * inv;
             let mut t2 = (hi - o) * inv;
@@ -119,8 +109,9 @@ impl RayIntersect for Cube {
         }
 
         // `t_near` es la entrada al cubo y `t_far` la salida. Si `t_near` quedo
-        // detras del origen, el rayo nacio dentro del cubo y el impacto valido
-        // es la salida.
+        // detras del origen el rayo nacio adentro (pasa con los rayos de
+        // refraccion que viajan dentro del cristal) y el impacto valido es la
+        // salida.
         let (t, axis, entering) = if t_near > EPSILON {
             (t_near, near_axis, true)
         } else if t_far > EPSILON {

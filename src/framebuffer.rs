@@ -1,9 +1,12 @@
 //! Framebuffer por software.
 //!
-//! El buffer es un `Vec<u8>` plano en RGBA en vez de una `Image` de raylib.
-//! `update_texture` de raylib sube exactamente este formato a la GPU, asi que
-//! mostrar el resultado en pantalla es una sola llamada sin conversiones de por
-//! medio.
+//! A diferencia del de la tarea anterior, aqui el buffer es un `Vec<u8>` plano
+//! en RGBA en vez de una `Image` de raylib. Dos razones:
+//!
+//! 1. Se puede partir en bandas horizontales con `chunks_mut` y repartirlas
+//!    entre hilos: `Image` no se puede compartir entre hilos de forma segura.
+//! 2. `update_texture` de raylib sube exactamente este formato a la GPU, asi
+//!    que blitear el resultado cada frame es una sola llamada sin conversiones.
 
 /// Buffer de color RGBA8 con su resolucion.
 pub struct Framebuffer {
@@ -27,13 +30,8 @@ impl Framebuffer {
         self.width * 4
     }
 
-    /// Escribe un pixel ya codificado.
-    pub fn set(&mut self, x: usize, y: usize, rgba: [u8; 4]) {
-        let i = y * self.row_bytes() + x * 4;
-        self.pixels[i..i + 4].copy_from_slice(&rgba);
-    }
-
-    /// Guarda el buffer como PNG.
+    /// Guarda el buffer como PNG. Se usa para la captura en alta resolucion
+    /// que alimenta el video de la entrega.
     pub fn save_png(&self, path: &str) -> Result<(), String> {
         use raylib::prelude::*;
 
@@ -60,30 +58,25 @@ impl Framebuffer {
 
 /// Convierte un color lineal en punto flotante a un pixel RGBA de 8 bits.
 ///
-/// Dos pasos, y ninguno es cosmetico:
-///
-/// - **Tone mapping de Reinhard**, `c / (1 + c)`. El calculo de luz no esta
-///   acotado a 1: basta con que dos lamparas se solapen para pasarse, y los
-///   materiales emisivos que vienen despues lo van a hacer siempre. Recortando
-///   en 1, todo lo brillante se aplana a blanco puro y se pierde el detalle.
-///   Reinhard comprime el rango alto de forma continua, asi que un valor de 5 y
-///   uno de 20 siguen siendo distinguibles.
-///
-/// - **Correccion gamma**, exponente 1/2.2. Sumar y multiplicar luz solo tiene
-///   sentido en espacio lineal, pero la pantalla interpreta los valores como
-///   sRGB. Sin este paso la imagen se ve mucho mas oscura de lo que deberia,
-///   sobre todo en los medios tonos.
+/// Incluye dos pasos que no estaban en la tarea anterior:
+/// - **Tone mapping Reinhard**: `c / (1 + c)` comprime valores mayores a 1 que
+///   ahora si aparecen, porque los materiales emisivos y los brillos especulares
+///   pueden pasarse del rango [0, 1]. Sin esto todo lo brillante se recorta a
+///   blanco plano y se pierde el detalle.
+/// - **Correccion gamma** (exponente 1/2.2): el calculo de luz se hace en
+///   espacio lineal, pero la pantalla espera sRGB. Sin esto la escena se ve
+///   mucho mas oscura de lo que deberia.
 #[inline]
 pub fn encode_pixel(color: nalgebra_glm::Vec3) -> [u8; 4] {
-    let channel = |c: f32| {
+    let tonemap = |c: f32| {
         let c = c.max(0.0);
         let mapped = c / (1.0 + c);
-        (mapped.powf(1.0 / 2.2) * 255.0).round().clamp(0.0, 255.0) as u8
+        mapped.powf(1.0 / 2.2)
     };
     [
-        channel(color.x),
-        channel(color.y),
-        channel(color.z),
+        (tonemap(color.x) * 255.0).round().clamp(0.0, 255.0) as u8,
+        (tonemap(color.y) * 255.0).round().clamp(0.0, 255.0) as u8,
+        (tonemap(color.z) * 255.0).round().clamp(0.0, 255.0) as u8,
         255,
     ]
 }

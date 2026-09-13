@@ -1,10 +1,14 @@
 //! La escena: geometria, materiales, luces y cielo.
+//!
+//! `Scene` se construye una sola vez al arrancar y despues solo se lee, por eso
+//! se puede compartir entre todos los hilos del render con una simple `&Scene`.
 
 use crate::cube::Cube;
 use crate::light::Light;
 use crate::material::{Material, MaterialId};
 use crate::ray_intersect::{Intersect, RayIntersect};
 use crate::texture::TextureManager;
+use crate::voxel::VoxelWorld;
 use nalgebra_glm::Vec3;
 
 pub struct Scene {
@@ -13,16 +17,25 @@ pub struct Scene {
     pub lights: Vec<Light>,
     pub textures: TextureManager,
 
-    /// Luz de relleno que llega de todas partes por igual.
+    /// Luz de relleno que llega de todas partes. Evita que lo que no recibe luz
+    /// directa quede en negro absoluto, que se ve plano y artificial.
     pub ambient: Vec3,
 
-    /// Colores del degradado del cielo: lo que ve un rayo que no choca con nada.
+    /// Colores del cielo: lo que ve un rayo que no choca con nada.
     pub sky_top: Vec3,
+    pub sky_horizon: Vec3,
     pub sky_bottom: Vec3,
+
+    /// Punto alrededor del cual conviene orbitar la camara.
+    pub focus: Vec3,
 }
 
 impl Scene {
     /// Impacto mas cercano del rayo contra la escena.
+    ///
+    /// Prueba el rayo contra todos los cubos, uno por uno. Es correcto pero
+    /// lineal: el costo crece con el numero de cubos multiplicado por el numero
+    /// de rayos.
     pub fn hit(&self, origin: &Vec3, direction: &Vec3) -> Intersect {
         let mut closest = Intersect::empty();
         for cube in &self.cubes {
@@ -34,8 +47,8 @@ impl Scene {
         closest
     }
 
-    /// Version acotada para los rayos de sombra: solo interesa si hay algo
-    /// entre el punto y la luz, no que hay mas alla de ella.
+    /// Version acotada para los rayos de sombra: solo interesa lo que este
+    /// entre el punto y la luz.
     pub fn hit_within(&self, origin: &Vec3, direction: &Vec3, max_distance: f32) -> Intersect {
         let mut closest = Intersect::empty();
         for cube in &self.cubes {
@@ -53,145 +66,806 @@ impl Scene {
         &self.materials[id]
     }
 
+    /// Color del cielo para un rayo que se escapa de la escena.
+    ///
+    /// Tres franjas en vez de un degradado simple: el naranja del atardecer
+    /// tiene que quedarse pegado al horizonte, no subir hasta el cenit. La
+    /// transicion usa `smoothstep` para que no se vea la linea de corte.
     #[inline]
     pub fn sky(&self, direction: &Vec3) -> Vec3 {
-        let t = (direction.y * 0.5 + 0.5).clamp(0.0, 1.0);
-        self.sky_bottom * (1.0 - t) + self.sky_top * t
+        let y = direction.y;
+        if y >= 0.0 {
+            let t = smoothstep(0.0, 0.45, y);
+            self.sky_horizon * (1.0 - t) + self.sky_top * t
+        } else {
+            let t = smoothstep(0.0, 0.25, -y);
+            self.sky_horizon * (1.0 - t) + self.sky_bottom * t
+        }
     }
 }
 
-// Indices de los materiales dentro de `Scene::materials`.
-const STONE: MaterialId = 0;
-const SAND: MaterialId = 1;
-const RED: MaterialId = 2;
-const BLUE: MaterialId = 3;
-const MIRROR: MaterialId = 4;
-const GLASS: MaterialId = 5;
-const LAMP: MaterialId = 6;
+#[inline]
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
 
-/// Escena de prueba: una plataforma y unas torres.
-pub fn build() -> Scene {
-    let materials = vec![
-        // Piedra mate: apenas brilla y el brillo es ancho.
+// ---------------------------------------------------------------------------
+// Materiales
+// ---------------------------------------------------------------------------
+
+// Indices de los materiales dentro de `Scene::materials`.
+pub const GRASS: MaterialId = 0;
+pub const DIRT: MaterialId = 1;
+pub const STONE: MaterialId = 2;
+pub const COBBLE: MaterialId = 3;
+pub const PLANKS: MaterialId = 4;
+pub const LOG: MaterialId = 5;
+pub const LEAVES: MaterialId = 6;
+pub const WATER: MaterialId = 7;
+pub const LAVA: MaterialId = 8;
+pub const OBSIDIAN: MaterialId = 9;
+pub const GLASS: MaterialId = 10;
+pub const TORCH: MaterialId = 11;
+pub const SAND: MaterialId = 12;
+
+/// Los materiales del diorama.
+///
+/// Los colores planos de `diffuse` son provisionales: se ven mientras no haya
+/// texturas y siguen sirviendo de tinte para la refraccion. Los parametros de
+/// `albedo`, `specular` e `refractive_index` si son los definitivos y estan
+/// elegidos para que cada material se lea distinto:
+///
+/// - el pasto y la tierra no brillan nada,
+/// - el adoquin brilla poco y ancho (superficie rugosa),
+/// - la madera brilla un poco mas,
+/// - el agua y el cristal refractan, pero con indices distintos (1.33 y 1.50),
+///   asi que deforman de forma diferente,
+/// - la obsidiana pulida es el unico espejo de verdad,
+/// - la lava no depende de ninguna lampara: se ilumina sola.
+fn build_materials() -> Vec<Material> {
+    vec![
         Material {
+            name: "pasto",
+            albedo: [0.95, 0.02, 0.00, 0.00],
+            specular: 3.0,
+            diffuse: Vec3::new(0.29, 0.52, 0.20),
+            ..Default::default()
+        },
+        Material {
+            name: "tierra",
+            albedo: [0.92, 0.02, 0.00, 0.00],
+            specular: 3.0,
+            diffuse: Vec3::new(0.40, 0.27, 0.16),
+            ..Default::default()
+        },
+        Material {
+            name: "piedra",
+            albedo: [0.88, 0.06, 0.00, 0.00],
+            specular: 10.0,
+            diffuse: Vec3::new(0.42, 0.42, 0.45),
+            ..Default::default()
+        },
+        Material {
+            name: "adoquin",
             albedo: [0.90, 0.05, 0.00, 0.00],
+            specular: 6.0,
+            diffuse: Vec3::new(0.36, 0.36, 0.38),
+            ..Default::default()
+        },
+        Material {
+            name: "tablones",
+            albedo: [0.90, 0.10, 0.02, 0.00],
+            specular: 12.0,
+            diffuse: Vec3::new(0.56, 0.38, 0.22),
+            ..Default::default()
+        },
+        Material {
+            name: "tronco",
+            albedo: [0.90, 0.06, 0.00, 0.00],
             specular: 8.0,
-            diffuse: Vec3::new(0.32, 0.35, 0.33),
+            diffuse: Vec3::new(0.36, 0.25, 0.15),
             ..Default::default()
         },
-        // Arena, todavia mas mate.
         Material {
-            albedo: [0.90, 0.02, 0.00, 0.00],
+            name: "hojas",
+            albedo: [0.85, 0.04, 0.00, 0.00],
             specular: 4.0,
-            diffuse: Vec3::new(0.78, 0.62, 0.30),
-            ..Default::default()
-        },
-        // Ceramica roja pulida: brillo pequeño y marcado.
-        Material {
-            albedo: [0.80, 0.45, 0.00, 0.00],
-            specular: 90.0,
-            diffuse: Vec3::new(0.80, 0.12, 0.08),
+            diffuse: Vec3::new(0.18, 0.40, 0.14),
             ..Default::default()
         },
         Material {
-            albedo: [0.80, 0.45, 0.00, 0.00],
-            specular: 90.0,
-            diffuse: Vec3::new(0.10, 0.28, 0.80),
+            name: "agua",
+            // Mas reflexion que el vidrio y menos transmision: al atardecer el
+            // agua devuelve el naranja del cielo, y ese reflejo es lo que la
+            // hace legible como agua en vez de como un hueco oscuro.
+            albedo: [0.10, 0.65, 0.30, 0.62],
+            specular: 180.0,
+            refractive_index: 1.33,
+            diffuse: Vec3::new(0.55, 0.78, 0.88),
             ..Default::default()
         },
-        // Metal pulido: casi no tiene color propio, lo que se ve en el es lo
-        // que refleja.
         Material {
-            albedo: [0.05, 0.60, 0.75, 0.00],
+            name: "lava",
+            // Difuso muy bajo a proposito: la lava se ilumina sola, y si ademas
+            // respondiera a las luces que ella misma proyecta se lavaria hasta
+            // quedar de un amarillo blancuzco plano.
+            albedo: [0.12, 0.08, 0.00, 0.00],
+            specular: 4.0,
+            // Brilla sola: es la fuente de luz principal de la mitad derecha
+            // del diorama. El valor pasa de 1, que es lo que el tone mapping
+            // comprime; con la proporcion R:G:B tan separada el naranja
+            // sobrevive a la compresion en vez de irse a blanco.
+            emission: Vec3::new(1.70, 0.30, 0.035),
+            diffuse: Vec3::new(0.95, 0.30, 0.06),
+            ..Default::default()
+        },
+        Material {
+            name: "obsidiana",
+            albedo: [0.15, 0.70, 0.60, 0.00],
             specular: 220.0,
-            diffuse: Vec3::new(0.85, 0.87, 0.90),
+            diffuse: Vec3::new(0.09, 0.07, 0.13),
             ..Default::default()
         },
-        // Cristal: el grueso de la energia lo transmite. El indice 1.5 es el
-        // del vidrio comun.
         Material {
+            name: "cristal",
             albedo: [0.05, 0.50, 0.10, 0.85],
             specular: 250.0,
             refractive_index: 1.50,
             diffuse: Vec3::new(0.88, 0.94, 0.92),
             ..Default::default()
         },
-        // Material emisivo: no depende de ninguna lampara. La emision pasa de
-        // 1 a proposito, que es justo para lo que servia el tone mapping.
         Material {
-            albedo: [0.20, 0.05, 0.00, 0.00],
+            name: "antorcha",
+            albedo: [0.30, 0.05, 0.00, 0.00],
             specular: 4.0,
-            emission: Vec3::new(2.40, 0.90, 0.25),
-            diffuse: Vec3::new(1.00, 0.70, 0.30),
+            emission: Vec3::new(2.20, 0.60, 0.14),
+            diffuse: Vec3::new(1.00, 0.72, 0.32),
             ..Default::default()
         },
-    ];
+        Material {
+            name: "arena",
+            albedo: [0.95, 0.03, 0.00, 0.00],
+            specular: 4.0,
+            diffuse: Vec3::new(0.78, 0.70, 0.50),
+            ..Default::default()
+        },
+    ]
+}
 
-    let mut cubes = Vec::new();
+// ---------------------------------------------------------------------------
+// Trazado del diorama
+// ---------------------------------------------------------------------------
 
-    for x in -4..5 {
-        for z in -4..5 {
-            let material = if (x + z) % 2 == 0 { STONE } else { SAND };
-            cubes.push(Cube::unit(x, -1, z, material));
+/// Semiejes de la isla. La forma no es un rectangulo sino un "squircle"
+/// (`|x/a|^3 + |z/b|^3 <= 1`): tiene las esquinas redondeadas, que se ve mucho
+/// mas natural que un bloque cuadrado, sin necesidad de dibujar el contorno a
+/// mano.
+const ISLAND_RX: f32 = 12.0;
+const ISLAND_RZ: f32 = 10.0;
+
+/// Profundidad a la que llega la roca de la isla.
+const BEDROCK_Y: i32 = -5;
+
+// Caja de la cabaña (extremos incluidos).
+const CABIN_X: (i32, i32) = (-9, -3);
+const CABIN_Z: (i32, i32) = (-7, -2);
+
+// Estanque, franja de obsidiana y lago de lava.
+//
+// Van uno al lado del otro a lo ancho, no uno detras del otro: como la camara
+// orbita, si estuvieran alineados en profundidad habria angulos desde los que
+// uno taparia completamente al otro. Asi los tres se ven juntos desde el frente
+// y desde los dos costados.
+const POND_X: (i32, i32) = (-6, 0);
+const POND_Z: (i32, i32) = (1, 6);
+const OBSIDIAN_X: (i32, i32) = (1, 2);
+const OBSIDIAN_Z: (i32, i32) = (1, 7);
+const LAVA_X: (i32, i32) = (3, 9);
+const LAVA_Z: (i32, i32) = (1, 6);
+
+#[inline]
+fn inside_island(x: i32, z: i32) -> bool {
+    let fx = (x as f32 + 0.5) / ISLAND_RX;
+    let fz = (z as f32 + 0.5) / ISLAND_RZ;
+    fx.abs().powi(3) + fz.abs().powi(3) <= 1.0
+}
+
+/// `true` si la celda y todo lo que la rodea a `margin` de distancia siguen
+/// dentro de la isla.
+///
+/// Se usa para que el lago de lava no llegue al borde: si una celda de lava
+/// quedara en la orilla, el bloque de al lado no existiria y se veria el cielo
+/// por el agujero, ademas de que la lava se derramaria por el acantilado.
+#[inline]
+fn inside_island_margin(x: i32, z: i32, margin: i32) -> bool {
+    for dx in -margin..=margin {
+        for dz in -margin..=margin {
+            if !inside_island(x + dx, z + dz) {
+                return false;
+            }
         }
     }
+    true
+}
 
-    cubes.push(Cube::unit(-2, 0, -2, RED));
-    cubes.push(Cube::unit(-2, 1, -2, RED));
-    cubes.push(Cube::unit(2, 0, -1, BLUE));
-    cubes.push(Cube::unit(0, 0, 2, RED));
+#[inline]
+fn in_box(x: i32, z: i32, xs: (i32, i32), zs: (i32, i32)) -> bool {
+    x >= xs.0 && x <= xs.1 && z >= zs.0 && z <= zs.1
+}
 
-    // Columna de espejo: refleja las torres y el ajedrezado del suelo, que es
-    // lo que permite comprobar de un vistazo que el rayo reflejado esta
-    // saliendo con el angulo correcto.
-    for y in 0..3 {
-        cubes.push(Cube::unit(-1, y, -4, MIRROR));
-        cubes.push(Cube::unit(0, y, -4, MIRROR));
+/// Zonas que tienen que quedar perfectamente planas a la altura 0: donde se
+/// apoyan la cabaña, el agua, la lava y el camino.
+fn is_flat_zone(x: i32, z: i32) -> bool {
+    in_box(x, z, (CABIN_X.0 - 1, CABIN_X.1 + 1), (CABIN_Z.0 - 1, CABIN_Z.1 + 1))
+        || in_box(x, z, (POND_X.0 - 1, POND_X.1 + 1), (POND_Z.0 - 1, POND_Z.1 + 1))
+        || in_box(x, z, OBSIDIAN_X, OBSIDIAN_Z)
+        || in_box(x, z, (LAVA_X.0 - 1, LAVA_X.1 + 1), (LAVA_Z.0 - 1, LAVA_Z.1 + 1))
+        || in_box(x, z, (-7, 2), (-1, 0))
+}
+
+/// Ruido de valor escrito a mano (sin librerias): se hashean las esquinas de
+/// una rejilla gruesa y se interpola suavemente entre ellas.
+///
+/// Se usa solo para ondular un poco el terreno; con altura constante la isla se
+/// ve como una mesa.
+fn value_noise(x: f32, z: f32) -> f32 {
+    #[inline]
+    fn hash(ix: i32, iz: i32) -> f32 {
+        // Mezcla entera tipo xorshift. Determinista y sin estado.
+        let mut h = (ix as u32).wrapping_mul(0x27D4_EB2D) ^ (iz as u32).wrapping_mul(0x1656_67B1);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2C1B_3C6D);
+        h ^= h >> 12;
+        h = h.wrapping_mul(0x2974_5B7D);
+        h ^= h >> 16;
+        (h >> 8) as f32 / (1u32 << 24) as f32
     }
 
-    // Bloque de cristal delante de la torre roja: a traves de el las lineas
-    // rectas del ajedrezado se quiebran, que es como se comprueba que la
-    // refraccion esta desviando los rayos y no solo dejandolos pasar.
-    cubes.push(Cube::unit(-3, 0, 1, GLASS));
-    cubes.push(Cube::unit(-3, 1, 1, GLASS));
+    let (x0, z0) = (x.floor(), z.floor());
+    let (fx, fz) = (x - x0, z - z0);
+    // Curva suave: quita la apariencia de rombos que deja la interpolacion
+    // lineal pura.
+    let (ux, uz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
 
-    // Bloque emisivo, para ver que ilumina sin necesidad de lampara y que su
-    // sombra no existe.
-    cubes.push(Cube::unit(3, 0, -3, LAMP));
+    let (ix, iz) = (x0 as i32, z0 as i32);
+    let c00 = hash(ix, iz);
+    let c10 = hash(ix + 1, iz);
+    let c01 = hash(ix, iz + 1);
+    let c11 = hash(ix + 1, iz + 1);
 
-    let lights = vec![
-        // Luz principal, lejana y sin caida: hace de sol.
-        Light::sun(
-            Vec3::new(12.0, 14.0, 8.0),
-            Vec3::new(1.0, 0.96, 0.90),
-            1.5,
-        ),
-        // Lampara calida y cercana, esta si con caida cuadratica. Sirve para
-        // comprobar que la atenuacion se nota: solo ilumina lo que tiene al
-        // lado.
-        Light::new(
-            Vec3::new(1.5, 1.5, 2.5),
-            Vec3::new(1.0, 0.55, 0.25),
-            14.0,
-        ),
-        // Luz en el mismo sitio que el bloque emisivo: un cubo que brilla pero
-        // no alumbra lo que tiene al lado se ve pegado, como un sticker.
-        Light::new(
-            Vec3::new(3.5, 0.5, -2.5),
-            Vec3::new(1.0, 0.62, 0.28),
-            10.0,
-        ),
-    ];
+    let a = c00 + (c10 - c00) * ux;
+    let b = c01 + (c11 - c01) * ux;
+    a + (b - a) * uz
+}
 
-    Scene {
+/// Altura del bloque mas alto de terreno en esa columna.
+fn terrain_top(x: i32, z: i32) -> i32 {
+    if is_flat_zone(x, z) {
+        return 0;
+    }
+    // Escala 1/7: colinas de unas siete celdas de ancho.
+    let n = value_noise(x as f32 / 7.0, z as f32 / 7.0);
+
+    // Cerca del borde de la isla el terreno baja, para que no termine en un
+    // acantilado recto por todos lados.
+    let fx = (x as f32 + 0.5) / ISLAND_RX;
+    let fz = (z as f32 + 0.5) / ISLAND_RZ;
+    let edge = 1.0 - (fx.abs().powi(3) + fz.abs().powi(3)).clamp(0.0, 1.0);
+
+    ((n * 3.4 * edge.powf(0.45)) - 0.45).round().clamp(0.0, 3.0) as i32
+}
+
+/// Construye el diorama completo.
+pub fn build() -> Result<Scene, String> {
+    let materials = build_materials();
+    let mut world = VoxelWorld::new(BEDROCK_Y);
+
+    carve_island(&mut world);
+    raise_outcrop(&mut world);
+    carve_water_and_lava(&mut world);
+    build_path(&mut world);
+    build_cabin(&mut world);
+    build_pier(&mut world);
+    plant_trees(&mut world);
+
+    let voxels = world.len();
+    let (mut cubes, culled) = world.into_cubes(&materials);
+
+    // Las antorchas no son bloques enteros: son piezas pequeñas pegadas a la
+    // pared, asi que se agregan como cubos sueltos despues de convertir el
+    // mundo de voxeles.
+    let torches = torch_positions();
+    for position in &torches {
+        cubes.push(Cube::new(
+            position - Vec3::new(0.14, 0.0, 0.14),
+            Vec3::new(0.28, 0.5, 0.28),
+            TORCH,
+        ));
+    }
+
+    let lights = build_lights(&torches);
+
+    println!(
+        "diorama: {} bloques -> {} cubos visibles ({} enterrados descartados) + {} antorchas",
+        voxels,
+        cubes.len() - torches.len(),
+        culled,
+        torches.len()
+    );
+    println!("\nmateriales:");
+    println!(
+        "  {:<10} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}  {}",
+        "nombre", "dif", "spec", "refl", "refr", "exp", "ior", "extras"
+    );
+    for material in &materials {
+        let mut extras = Vec::new();
+        if material.emission != Vec3::zeros() {
+            extras.push("emisivo");
+        }
+        if material.texture.is_some() {
+            extras.push("textura");
+        }
+        if material.normal_map.is_some() {
+            extras.push("normal map");
+        }
+        println!(
+            "  {:<10} {:>6.2} {:>6.2} {:>6.2} {:>6.2} {:>6.0} {:>6.2}  {}",
+            material.name,
+            material.albedo[0],
+            material.albedo[1],
+            material.albedo[2],
+            material.albedo[3],
+            material.specular,
+            material.refractive_index,
+            extras.join(", ")
+        );
+    }
+    println!();
+
+    Ok(Scene {
         cubes,
         materials,
         lights,
-        // Todavia vacio: los materiales se dibujan con su color plano hasta que
-        // esten los PNG del diorama.
         textures: TextureManager::new(),
-        ambient: Vec3::new(0.05, 0.06, 0.10),
-        sky_top: Vec3::new(0.08, 0.22, 0.80),
-        sky_bottom: Vec3::new(0.55, 0.68, 0.95),
+        // Relleno azulado: es la luz del cielo del atardecer rebotando. Que sea
+        // frio hace que el naranja de la lava resalte por contraste.
+        ambient: Vec3::new(0.070, 0.088, 0.140),
+        sky_top: Vec3::new(0.06, 0.10, 0.30),
+        sky_horizon: Vec3::new(0.95, 0.42, 0.20),
+        sky_bottom: Vec3::new(0.10, 0.08, 0.10),
+        focus: Vec3::new(-1.0, 1.5, 0.0),
+    })
+}
+
+/// Isla: pasto arriba, tierra debajo y roca hasta el fondo.
+fn carve_island(world: &mut VoxelWorld) {
+    let rx = ISLAND_RX.ceil() as i32;
+    let rz = ISLAND_RZ.ceil() as i32;
+
+    for x in -rx..=rx {
+        for z in -rz..=rz {
+            if !inside_island(x, z) {
+                continue;
+            }
+            let top = terrain_top(x, z);
+            world.set(x, top, z, GRASS);
+            world.set(x, top - 1, z, DIRT);
+            world.set(x, top - 2, z, DIRT);
+            for y in BEDROCK_Y..=(top - 3) {
+                world.set(x, y, z, STONE);
+            }
+        }
+    }
+}
+
+/// Afloramiento de roca al fondo de la isla.
+///
+/// Rompe la silueta, que sin el es un disco plano, y le da al arbol de la
+/// izquierda un sitio elevado desde donde proyectar sombra sobre la cabaña.
+fn raise_outcrop(world: &mut VoxelWorld) {
+    for x in -12..=-7 {
+        for z in 2..=8 {
+            if !inside_island(x, z) {
+                continue;
+            }
+            // Altura en forma de loma: maxima en el centro del afloramiento y
+            // bajando hacia los bordes.
+            let dx = (x + 10) as f32 / 3.0;
+            let dz = (z - 5) as f32 / 3.5;
+            let bump = (1.0 - (dx * dx + dz * dz)).max(0.0);
+            let top = (bump * 4.5).round() as i32;
+            if top <= 0 {
+                continue;
+            }
+            let base = terrain_top(x, z);
+            for y in base..=(base + top) {
+                world.set(x, y, z, STONE);
+            }
+        }
+    }
+}
+
+/// Excava el estanque y el lago de lava, y levanta la franja de obsidiana que
+/// los separa.
+///
+/// La obsidiana esta ahi por una razon, no de adorno: es lo que aparece cuando
+/// la lava toca el agua. Ademas es el unico material reflectante del diorama y
+/// al estar justo entre los dos refleja la lava, que es lo que hace que el
+/// reflejo se note en vez de ser un espejo de cielo vacio.
+fn carve_water_and_lava(world: &mut VoxelWorld) {
+    // Estanque: dos bloques de agua sobre un fondo de adoquin. El fondo se ve
+    // a traves del agua, deformado por la refraccion.
+    for x in POND_X.0..=POND_X.1 {
+        for z in POND_Z.0..=POND_Z.1 {
+            // Fondo de arena clara con piedras sueltas encima. El fondo
+            // importa por dos razones: tiene que ser claro para que el estanque
+            // no se lea como un agujero negro, y tiene que tener un patron
+            // reconocible, porque sin lineas rectas debajo la refraccion no se
+            // aprecia. Solo dos bloques de profundidad, para que le llegue luz.
+            world.set(x, -2, z, SAND);
+            if (x * 3 + z * 5).rem_euclid(6) == 0 {
+                world.set(x, -1, z, STONE);
+            } else {
+                world.set(x, -1, z, SAND);
+            }
+            world.set(x, 0, z, WATER);
+        }
+    }
+
+    // Orilla de arena alrededor del estanque.
+    for x in (POND_X.0 - 1)..=(POND_X.1 + 1) {
+        for z in (POND_Z.0 - 1)..=(POND_Z.1 + 1) {
+            if in_box(x, z, POND_X, POND_Z) || !inside_island(x, z) {
+                continue;
+            }
+            world.set(x, 0, z, SAND);
+        }
+    }
+
+    // Franja de obsidiana entre el agua y la lava.
+    for x in OBSIDIAN_X.0..=OBSIDIAN_X.1 {
+        for z in OBSIDIAN_Z.0..=OBSIDIAN_Z.1 {
+            if !inside_island(x, z) {
+                continue;
+            }
+            world.set(x, 0, z, OBSIDIAN);
+            world.set(x, -1, z, OBSIDIAN);
+        }
+    }
+
+    // Lago de lava, a ras de suelo y rodeado de un reborde de obsidiana.
+    //
+    // El reborde no es decorativo: sin el, una celda de lava en la orilla de la
+    // isla dejaria un agujero por el que se veria el cielo. El margen de 1
+    // garantiza que toda celda de lava tenga vecinos, y las celdas del anillo
+    // que queda alrededor se rellenan de obsidiana, que ademas es donde el
+    // reflejo naranja se ve mejor.
+    let pool: Vec<(i32, i32)> = (LAVA_X.0..=LAVA_X.1)
+        .flat_map(|x| (LAVA_Z.0..=LAVA_Z.1).map(move |z| (x, z)))
+        .filter(|&(x, z)| inside_island_margin(x, z, 1))
+        .collect();
+
+    for &(x, z) in &pool {
+        world.set(x, -2, z, OBSIDIAN);
+        world.set(x, -1, z, LAVA);
+        world.set(x, 0, z, LAVA);
+    }
+
+    // Anillo: las celdas pegadas al lago que no son lago.
+    for &(x, z) in &pool {
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let (nx, nz) = (x + dx, z + dz);
+                if pool.contains(&(nx, nz)) || !inside_island(nx, nz) {
+                    continue;
+                }
+                world.set(nx, 0, nz, OBSIDIAN);
+                world.set(nx, -1, nz, OBSIDIAN);
+            }
+        }
+    }
+
+    // Columnas de obsidiana entre el agua y la lava.
+    //
+    // Son la razon de ser del material reflectante. Una superficie de obsidiana
+    // plana en el suelo refleja hacia arriba, o sea el cielo, y el reflejo pasa
+    // desapercibido. Estas columnas tienen caras **verticales** mirando al lago,
+    // asi que reflejan la lava: franjas naranjas moviendose sobre cristal negro
+    // conforme gira la camara. Narrativamente son lo que queda donde la lava
+    // toco el agua.
+    for (x, z, height) in [
+        (1, 1, 2),
+        (2, 3, 4),
+        (1, 5, 3),
+        (2, 7, 2),
+        (2, -1, 3),
+        (1, 8, 2),
+    ] {
+        if !inside_island(x, z) {
+            continue;
+        }
+        for y in 0..height {
+            world.set(x, y, z, OBSIDIAN);
+        }
+    }
+}
+
+/// Camino de adoquin de la puerta de la cabaña a la orilla del estanque.
+fn build_path(world: &mut VoxelWorld) {
+    // Tramo que baja de la puerta al borde del agua.
+    for z in -1..=0 {
+        world.set(-6, 0, z, COBBLE);
+        world.set(-5, 0, z, COBBLE);
+    }
+    // Andador a lo largo de la orilla, de punta a punta, que conecta el
+    // estanque con la franja de obsidiana.
+    for x in -7..=2 {
+        world.set(x, 0, 0, COBBLE);
+    }
+}
+
+/// La cabaña: tablones, esquinas de tronco, ventanas de cristal, puerta abierta
+/// y techo a dos aguas.
+fn build_cabin(world: &mut VoxelWorld) {
+    let (x0, x1) = CABIN_X;
+    let (z0, z1) = CABIN_Z;
+
+    // Piso y paredes. El piso va sobre el pasto, las paredes cuatro bloques.
+    world.fill((x0, x1), (1, 1), (z0, z1), PLANKS);
+    for y in 1..=4 {
+        for x in x0..=x1 {
+            world.set(x, y, z0, PLANKS);
+            world.set(x, y, z1, PLANKS);
+        }
+        for z in z0..=z1 {
+            world.set(x0, y, z, PLANKS);
+            world.set(x1, y, z, PLANKS);
+        }
+    }
+
+    // Troncos en las cuatro esquinas: rompen la monotonia de la pared y son un
+    // material distinto al de los tablones.
+    for y in 1..=4 {
+        world.set(x0, y, z0, LOG);
+        world.set(x1, y, z0, LOG);
+        world.set(x0, y, z1, LOG);
+        world.set(x1, y, z1, LOG);
+    }
+
+    // Ventanas de cristal en la pared del frente (la que mira al estanque) y
+    // una lateral, a la altura de los ojos.
+    for y in 2..=3 {
+        world.set(-8, y, z1, GLASS);
+        world.set(-7, y, z1, GLASS);
+        world.set(-4, y, z1, GLASS);
+        world.set(x0, y, -5, GLASS);
+        world.set(x0, y, -4, GLASS);
+    }
+
+    // Puerta: un hueco de dos bloques en la pared del frente.
+    world.clear(-6, 1, z1);
+    world.clear(-6, 2, z1);
+    world.clear(-5, 1, z1);
+    world.clear(-5, 2, z1);
+
+    // Lampara dentro de la cabaña. No se ve directamente, pero su luz sale por
+    // la ventana: es lo que hace que el cristal se lea como cristal y no como
+    // un agujero.
+    world.set(-7, 3, -5, TORCH);
+
+    // Ventana tambien en la pared de atras. No es simetria por simetria: el
+    // diorama gira, y sin ella la cabaña vista desde atras es una losa lisa.
+    for y in 2..=3 {
+        world.set(-7, y, z0, GLASS);
+        world.set(-6, y, z0, GLASS);
+    }
+
+    // Techo a dos aguas: tres escalones que se van cerrando hacia el centro,
+    // con un bloque de alero sobresaliendo por cada lado.
+    let roof = [
+        (5, (x0 - 1, x1 + 1), (z0 - 1, z1 + 1)),
+        (6, (x0 - 1, x1 + 1), (z0, z1)),
+        (7, (x0 - 1, x1 + 1), (z0 + 1, z1 - 1)),
+    ];
+    for (y, xs, zs) in roof {
+        world.fill(xs, (y, y), zs, PLANKS);
+    }
+
+    // Chimenea de piedra que atraviesa el techo, con brasas encendidas arriba.
+    //
+    // Cumple dos funciones: rompe la silueta del techo, que desde atras era una
+    // losa rectangular, y pone una fuente de luz calida en lo alto que se ve
+    // desde cualquier angulo de la orbita.
+    let (cx, cz) = (-8, -6);
+    for y in 1..=8 {
+        world.set(cx, y, cz, COBBLE);
+    }
+}
+
+/// Embarcadero de madera sobre el estanque.
+///
+/// Le da un motivo al camino de adoquin (va de la puerta al agua) y sus tablas
+/// se reflejan en la superficie, que es lo que deja ver que el agua **es**
+/// reflectante y no solo un plano azul.
+fn build_pier(world: &mut VoxelWorld) {
+    for x in -5..=-1 {
+        for z in 3..=4 {
+            world.set(x, 1, z, PLANKS);
+        }
+    }
+    // Pilotes que lo sostienen, hundidos en el agua.
+    for (x, z) in [(-5, 3), (-5, 4), (-1, 3), (-1, 4)] {
+        world.set(x, 0, z, LOG);
+    }
+}
+
+/// Arboles: tronco de cuatro bloques y copa de hojas sin las esquinas, para que
+/// la silueta no se vea cuadrada.
+fn plant_trees(world: &mut VoxelWorld) {
+    for (x, z) in [(-11, -1), (10, -4), (-4, 9)] {
+        let base = terrain_top(x, z) + 1;
+
+        for y in base..base + 4 {
+            world.set(x, y, z, LOG);
+        }
+
+        let crown = base + 3;
+        for dy in 0..3 {
+            let radius: i32 = if dy == 2 { 1 } else { 2 };
+            for dx in -radius..=radius {
+                for dz in -radius..=radius {
+                    // Se recortan las esquinas del cubo de hojas.
+                    if dx.abs() == radius && dz.abs() == radius {
+                        continue;
+                    }
+                    // No tapar el tronco con hojas en su propia columna.
+                    if dx == 0 && dz == 0 && dy < 2 {
+                        continue;
+                    }
+                    world.set(x + dx, crown + dy, z + dz, LEAVES);
+                }
+            }
+        }
+        world.set(x, crown + 3, z, LEAVES);
+    }
+}
+
+/// Donde van las antorchas, en coordenadas de mundo (la base de cada una).
+fn torch_positions() -> Vec<Vec3> {
+    vec![
+            // Brasas en la boca de la chimenea. Va como pieza pequeña, no como
+        // bloque entero: un cubo emisivo completo ahi arriba se lee como una
+        // caja blanca flotando, no como fuego.
+        Vec3::new(-7.5, 9.0, -5.5),
+        // A los lados de la puerta, pegadas a la pared del frente.
+        Vec3::new(-7.5, 2.6, -1.6),
+        Vec3::new(-3.5, 2.6, -1.6),
+        // Al final del camino, junto al estanque.
+        Vec3::new(-3.5, 2.0, 3.5),
+    ]
+}
+
+/// Las luces de la escena.
+///
+/// El atardecer se arma con tres grupos:
+///
+/// 1. **El sol**, bajo y naranja, sin atenuacion: da la direccion general de
+///    las sombras y la luz rasante que hace visible el relieve del adoquin.
+/// 2. **La lava**, varias luces repartidas sobre el lago para que la iluminacion
+///    no salga de un solo punto y las sombras no se vean como de reflector.
+/// 3. **Las antorchas**, una por cada cubo emisivo, para que ademas de brillar
+///    alumbren lo que tienen alrededor.
+fn build_lights(torches: &[Vec3]) -> Vec<Light> {
+    let mut lights = vec![Light::sun(
+        // Lejos y bajo: rayos rasantes y sombras largas, pero no tanto como
+        // para que las caras horizontales se queden sin luz (con el sol casi en
+        // el horizonte el techo y el pasto reciben `n . l` casi cero y el
+        // diorama se ve iluminado solo de costado).
+        Vec3::new(40.0, 23.0, 26.0),
+        Vec3::new(1.00, 0.60, 0.33),
+        1.05,
+    )];
+
+    // Luz de relleno, fria y desde el lado opuesto al sol.
+    //
+    // Hace falta porque el diorama **gira**: con una sola fuente lateral, media
+    // vuelta de la camara transcurre mirando la cara en sombra y la escena se
+    // vuelve una silueta negra. El relleno representa la luz azul del cielo que
+    // rebota por el lado opuesto al atardecer, y ademas separa por color lo
+    // iluminado (naranja) de lo que esta en sombra (azul), que es lo que le da
+    // profundidad a la imagen.
+    lights.push(Light::sun(
+        Vec3::new(-34.0, 20.0, -28.0),
+        Vec3::new(0.34, 0.46, 0.78),
+        0.55,
+    ));
+
+    // Tres focos sobre el lago de lava.
+    let lava_centre_z = (LAVA_Z.0 + LAVA_Z.1) as f32 * 0.5;
+    for (i, x) in [2.0f32, 4.5, 6.5].iter().enumerate() {
+        let z = lava_centre_z + (i as f32 - 1.0) * 1.8;
+        lights.push(Light::new(
+            Vec3::new(*x, 1.6, z),
+            Vec3::new(1.00, 0.33, 0.07),
+            26.0,
+        ));
+    }
+
+    // Una luz por antorcha, justo encima de la llama.
+    for torch in torches {
+        lights.push(Light::new(
+            torch + Vec3::new(0.0, 0.55, 0.0),
+            Vec3::new(1.00, 0.62, 0.28),
+            11.0,
+        ));
+    }
+
+    // Las brasas de la chimenea.
+    lights.push(Light::new(
+        Vec3::new(-7.5, 9.8, -5.5),
+        Vec3::new(1.00, 0.50, 0.22),
+        14.0,
+    ));
+
+    // La lampara de dentro de la cabaña, la que sale por la ventana.
+    lights.push(Light::new(
+        Vec3::new(-6.5, 3.6, -4.5),
+        Vec3::new(1.00, 0.70, 0.38),
+        9.0,
+    ));
+
+    lights
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Las constantes `GRASS`, `WATER`, etc. son indices posicionales dentro
+    /// del vector que devuelve `build_materials`. Insertar un material en medio
+    /// del vector sin mover las constantes desplazaria todo y la escena
+    /// aparecería con los materiales cambiados, sin ningún error de
+    /// compilacion. Esta prueba ancla esa correspondencia.
+    #[test]
+    fn material_constants_match_their_index() {
+        let materials = build_materials();
+        for (id, expected) in [
+            (GRASS, "pasto"),
+            (DIRT, "tierra"),
+            (STONE, "piedra"),
+            (COBBLE, "adoquin"),
+            (PLANKS, "tablones"),
+            (LOG, "tronco"),
+            (LEAVES, "hojas"),
+            (WATER, "agua"),
+            (LAVA, "lava"),
+            (OBSIDIAN, "obsidiana"),
+            (GLASS, "cristal"),
+            (TORCH, "antorcha"),
+            (SAND, "arena"),
+        ] {
+            assert_eq!(
+                materials[id].name, expected,
+                "la constante del material {expected} apunta al indice equivocado"
+            );
+        }
+        assert_eq!(materials.len(), 13, "hay materiales sin constante");
+    }
+
+    /// Cada material declarado tiene que usarse de verdad en la escena. Un
+    /// material que existe en el codigo pero no aparece en ningun cubo es peso
+    /// muerto: ocupa un indice y hace creer que la escena tiene mas variedad
+    /// de la que se ve.
+    #[test]
+    fn every_material_is_used() {
+        let scene = build().expect("escena de prueba");
+        for (id, material) in scene.materials.iter().enumerate() {
+            assert!(
+                scene.cubes.iter().any(|c| c.material == id),
+                "el material '{}' no se usa en ningun cubo",
+                material.name
+            );
+        }
     }
 }

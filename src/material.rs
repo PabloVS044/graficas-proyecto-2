@@ -17,6 +17,9 @@ pub type MaterialId = usize;
 /// la nada, aunque no se fuerza.
 #[derive(Debug, Clone)]
 pub struct Material {
+    /// Nombre legible, solo para depurar y para el HUD.
+    pub name: &'static str,
+
     /// `[difuso, especular, reflexion, refraccion]`.
     ///
     /// - difuso: cuanto del color de la textura se ve bajo luz directa.
@@ -57,6 +60,7 @@ pub struct Material {
 impl Default for Material {
     fn default() -> Self {
         Material {
+            name: "sin nombre",
             albedo: [1.0, 0.0, 0.0, 0.0],
             specular: 1.0,
             refractive_index: 1.0,
