@@ -779,20 +779,36 @@ fn build_cabin(world: &mut VoxelWorld) {
     }
 }
 
-/// Embarcadero de madera sobre el estanque.
+/// Muelle de madera sobre el estanque.
 ///
-/// Le da un motivo al camino de adoquin (va de la puerta al agua) y sus tablas
-/// se reflejan en la superficie, que es lo que deja ver que el agua **es**
-/// reflectante y no solo un plano azul.
+/// Una pasarela recta que sale de la orilla, justo donde termina el camino de
+/// adoquin, y avanza sobre el agua. Antes era una losa de 5x2 flotando en medio
+/// del estanque, sin tocar tierra: parecia una tabla suelta, no un muelle.
+///
+/// Tres cosas lo hacen leerse como muelle y no como suelo:
+///
+/// - **Arranca en la orilla.** Una pasarela que empieza en el agua no se
+///   entiende; hay que ver de donde sale.
+/// - **Los pilotes bajan hasta la arena.** Se ven a traves del agua y explican
+///   que sostiene la pasarela. Sin ellos la madera parece flotar.
+/// - **Se detiene antes de la orilla opuesta.** Cruzarlo de lado a lado lo
+///   convertiria en un puente; un muelle termina en agua abierta.
 fn build_pier(world: &mut VoxelWorld) {
-    for x in -5..=-1 {
-        for z in 3..=4 {
+    // Pasarela recta de dos bloques de ancho, desde la orilla hacia el agua.
+    // Se detiene antes de la orilla opuesta: un tablero que cruza el estanque
+    // de lado a lado es un puente, y lo que se busca es un muelle, que tiene
+    // que terminar en agua abierta.
+    for x in -4..=-3 {
+        for z in 1..=4 {
             world.set(x, 1, z, PLANKS);
         }
     }
-    // Pilotes que lo sostienen, hundidos en el agua.
-    for (x, z) in [(-5, 3), (-5, 4), (-1, 3), (-1, 4)] {
-        world.set(x, 0, z, LOG);
+
+    // Pilotes: del nivel del agua hasta hundirse en la arena del fondo.
+    for (x, z) in [(-4, 2), (-3, 2), (-4, 4), (-3, 4)] {
+        for y in -1..=0 {
+            world.set(x, y, z, LOG);
+        }
     }
 }
 
