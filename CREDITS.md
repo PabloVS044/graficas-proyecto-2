@@ -15,7 +15,6 @@ Licencia: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 | `cobblestone` | PavingStones151 | Color + NormalGL |
 | `stone`       | Rock064         | Color + NormalGL |
 | `planks`      | Planks012       | Color + NormalGL |
-| `log`         | Bark006         | Color + NormalGL |
 | `lava`        | Lava005         | Color + NormalGL |
 | `obsidian`    | Marble006       | Color |
 
@@ -29,6 +28,7 @@ Paquete: [Voxel Pack](https://kenney.nl/assets/voxel-pack)
 | `grass`  | `grass_top.png` |
 | `dirt`   | `dirt.png` |
 | `leaves` | `leaves.png` |
+| `log`    | `trunk_side.png` |
 | `sand`   | `sand.png` |
 | `water`  | `water.png` |
 | `glass`  | `glass_frame.png` |

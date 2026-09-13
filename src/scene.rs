@@ -160,7 +160,6 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let n_stone = normal(textures, "stone")?;
     let n_cobble = normal(textures, "cobblestone")?;
     let n_planks = normal(textures, "planks")?;
-    let n_log = normal(textures, "log")?;
     let n_lava = normal(textures, "lava")?;
 
     Ok(vec![
@@ -213,7 +212,6 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             specular: 8.0,
             diffuse: Vec3::new(0.36, 0.25, 0.15),
             texture: Some(t_log),
-            normal_map: Some(n_log),
             ..Default::default()
         },
         Material {

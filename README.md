@@ -92,8 +92,8 @@ y se descarta sin que la imagen cambie en un solo pixel.
 
 ## Materiales
 
-Trece materiales, cada uno con su propia textura y sus propios parametros. Cinco
-llevan ademas mapa de normales. Todas las texturas son CC0; el origen exacto de
+Trece materiales, cada uno con su propia textura y sus propios parametros.
+Cuatro llevan ademas mapa de normales. Todas las texturas son CC0; el origen exacto de
 cada una esta en [CREDITS.md](CREDITS.md).
 
 | Material | Difuso | Especular | Reflexion | Refraccion | Exp. | IOR | Normal | Notas |
@@ -103,7 +103,7 @@ cada una esta en [CREDITS.md](CREDITS.md).
 | piedra     | 0.88 | 0.06 | 0.00 | 0.00 |  10 |  -   | si | |
 | adoquin    | 0.90 | 0.05 | 0.00 | 0.00 |   6 |  -   | si | |
 | tablones   | 0.90 | 0.10 | 0.02 | 0.00 |  12 |  -   | si | |
-| tronco     | 0.90 | 0.06 | 0.00 | 0.00 |   8 |  -   | si | |
+| tronco     | 0.90 | 0.06 | 0.00 | 0.00 |   8 |  -   |    | |
 | hojas      | 0.85 | 0.04 | 0.00 | 0.00 |   4 |  -   |    | |
 | **agua**   | 0.30 | 0.60 | 0.26 | 0.50 | 180 | 1.33 |    | refracta |
 | **lava**   | 0.12 | 0.08 | 0.00 | 0.00 |   4 |  -   | si | **emisiva**, con mascara |
