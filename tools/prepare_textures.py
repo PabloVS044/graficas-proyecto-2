@@ -41,7 +41,10 @@ AMBIENTCG = {
     "stone": ("Rock064", 0.22, True),
     "planks": ("Planks012", 0.45, True),
     "lava": ("Lava005", 0.34, True),
-    "log": ("Bark006", 0.26, True),
+    # Recorte muy cerrado: Bark006 es corteza de grano fino, no de surcos
+    # grandes. A 0.26 la reduccion a 32x32 no dejaba estructura alguna, solo
+    # ruido por pixel, y el tronco se veia como una mancha moteada.
+    "log": ("Bark006", 0.10, True),
     "obsidian": ("Marble006", 0.30, False),
 }
 
@@ -57,7 +60,14 @@ AMBIENTCG = {
 # el aspecto de neon. El tinte se aplica despues, para llevar el resultado hacia
 # el tono que pide la escena.
 AJUSTES = {
-    "log": (1.0, (1.35, 0.92, 0.62)),
+    # La corteza es gris y esta cubierta de liquen naranja. Se desatura para
+    # quitar el moteado del liquen y luego se tiñe de marron, que es el color
+    # que pide un tronco junto a las hojas verdes.
+    "log": (0.35, (1.50, 1.05, 0.68)),
+    # Rock064 tiene mucho musgo amarillo verdoso, hasta el punto de que el
+    # acantilado no se leia como piedra. Desaturada queda roca gris con
+    # manchas mas oscuras.
+    "stone": (0.40, (1.02, 1.00, 0.98)),
     "grass": (0.55, (1.00, 0.86, 0.66)),
     "leaves": (0.60, (0.92, 0.84, 0.62)),
 }
