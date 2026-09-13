@@ -89,26 +89,33 @@ y se descarta sin que la imagen cambie en un solo pixel.
 
 ## Materiales
 
-> **Estado:** los parametros de cada material son los definitivos y ya se
-> distinguen en el render. Las **texturas y los mapas normales todavia no estan
-> conectados**: faltan los PNG. Mientras tanto cada material se dibuja con su
-> color plano.
+Trece materiales, cada uno con su propia textura y sus propios parametros. Cinco
+llevan ademas mapa de normales. Todas las texturas son CC0; el origen exacto de
+cada una esta en [CREDITS.md](CREDITS.md).
 
-| Material | Difuso | Especular | Reflexion | Refraccion | Exp. | IOR | Notas |
-|----------|-------:|----------:|----------:|-----------:|-----:|----:|-------|
-| pasto      | 0.95 | 0.02 | 0.00 | 0.00 |   3 |  -   | |
-| tierra     | 0.92 | 0.02 | 0.00 | 0.00 |   3 |  -   | |
-| piedra     | 0.88 | 0.06 | 0.00 | 0.00 |  10 |  -   | |
-| adoquin    | 0.90 | 0.05 | 0.00 | 0.00 |   6 |  -   | |
-| tablones   | 0.90 | 0.10 | 0.02 | 0.00 |  12 |  -   | |
-| tronco     | 0.90 | 0.06 | 0.00 | 0.00 |   8 |  -   | |
-| hojas      | 0.85 | 0.04 | 0.00 | 0.00 |   4 |  -   | |
-| **agua**   | 0.10 | 0.65 | 0.30 | 0.62 | 180 | 1.33 | refracta |
-| **lava**   | 0.12 | 0.08 | 0.00 | 0.00 |   4 |  -   | **emisiva** |
-| **obsidiana** | 0.15 | 0.70 | **0.60** | 0.00 | 220 |  -   | espejo |
-| **cristal**| 0.05 | 0.50 | 0.10 | **0.85** | 250 | 1.50 | refracta |
-| antorcha   | 0.30 | 0.05 | 0.00 | 0.00 |   4 |  -   | **emisiva** |
-| arena      | 0.95 | 0.03 | 0.00 | 0.00 |   4 |  -   | |
+| Material | Difuso | Especular | Reflexion | Refraccion | Exp. | IOR | Normal | Notas |
+|----------|-------:|----------:|----------:|-----------:|-----:|----:|:------:|-------|
+| pasto      | 0.95 | 0.02 | 0.00 | 0.00 |   3 |  -   |    | |
+| tierra     | 0.92 | 0.02 | 0.00 | 0.00 |   3 |  -   |    | |
+| piedra     | 0.88 | 0.06 | 0.00 | 0.00 |  10 |  -   | si | |
+| adoquin    | 0.90 | 0.05 | 0.00 | 0.00 |   6 |  -   | si | |
+| tablones   | 0.90 | 0.10 | 0.02 | 0.00 |  12 |  -   | si | |
+| tronco     | 0.90 | 0.06 | 0.00 | 0.00 |   8 |  -   | si | |
+| hojas      | 0.85 | 0.04 | 0.00 | 0.00 |   4 |  -   |    | |
+| **agua**   | 0.30 | 0.60 | 0.26 | 0.50 | 180 | 1.33 |    | refracta |
+| **lava**   | 0.12 | 0.08 | 0.00 | 0.00 |   4 |  -   | si | **emisiva**, con mascara |
+| **obsidiana** | 0.15 | 0.70 | **0.60** | 0.00 | 220 |  -   |    | espejo |
+| **cristal**| 0.05 | 0.50 | 0.10 | **0.85** | 250 | 1.50 |    | refracta |
+| antorcha   | 0.30 | 0.05 | 0.00 | 0.00 |   4 |  -   |    | **emisiva** |
+| arena      | 0.95 | 0.03 | 0.00 | 0.00 |   4 |  -   |    | |
+
+Las texturas se muestrean con **nearest-neighbor**, no bilineal: a 32x32 el
+filtrado bilineal las volveria una mancha borrosa, y el escalonado duro es justo
+el aspecto que se busca.
+
+La lava usa su propia textura como **mascara de emision**: las vetas
+incandescentes brillan y la costra oscura no, en vez de que la cara entera emita
+por igual.
 
 ## Decisiones
 
@@ -172,8 +179,12 @@ y coloreada en vez de una mancha negra.
 Los **mapas normales** perturban la normal de la cara plana usando la base
 tangente que `cube.rs` calcula por cara. Como los cubos estan alineados a los
 ejes, T, B y N salen directo de que cara se golpeo, sin calcularlos por
-triangulo. El transporte de la normal ya esta implementado en
-`render::shading_normal`; falta asignarle un mapa a los materiales.
+triangulo.
+
+Los mapas normales vienen de fotografias de 1024x1024 reducidas a 32x32.
+Promediar pixeles al reducir acerca todas las normales a la vertical y aplana el
+relieve, asi que `tools/prepare_textures.py` amplifica las componentes X e Y y
+renormaliza el vector para recuperarlo.
 
 El color se calcula en **espacio lineal** (las texturas se convierten de sRGB al
 cargarlas) y se escribe con **tone mapping Reinhard** y correccion gamma. Hace

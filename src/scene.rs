@@ -126,25 +126,50 @@ pub const SAND: MaterialId = 12;
 
 /// Los materiales del diorama.
 ///
-/// Los colores planos de `diffuse` son provisionales: se ven mientras no haya
-/// texturas y siguen sirviendo de tinte para la refraccion. Los parametros de
-/// `albedo`, `specular` e `refractive_index` si son los definitivos y estan
-/// elegidos para que cada material se lea distinto:
+/// Cada uno tiene su propia textura y sus propios parametros. Los parametros
+/// estan elegidos para que se distingan a simple vista:
 ///
-/// - el pasto y la tierra no brillan nada,
-/// - el adoquin brilla poco y ancho (superficie rugosa),
-/// - la madera brilla un poco mas,
+/// - el pasto, la tierra y la arena no brillan nada,
+/// - el adoquin brilla poco y ancho, como corresponde a una superficie rugosa,
+/// - la madera brilla algo mas,
 /// - el agua y el cristal refractan, pero con indices distintos (1.33 y 1.50),
 ///   asi que deforman de forma diferente,
 /// - la obsidiana pulida es el unico espejo de verdad,
 /// - la lava no depende de ninguna lampara: se ilumina sola.
-fn build_materials() -> Vec<Material> {
-    vec![
+///
+/// Cinco materiales llevan ademas mapa de normales. Se cargan con `load_raw` y
+/// no con `load` porque no son colores sino vectores codificados: pasarlos de
+/// sRGB a lineal los deformaria.
+fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, String> {
+    let color = |t: &mut TextureManager, n: &str| t.load(&format!("assets/textures/{n}.png"));
+    let normal = |t: &mut TextureManager, n: &str| t.load_raw(&format!("assets/normals/{n}.png"));
+
+    let t_grass = color(textures, "grass")?;
+    let t_dirt = color(textures, "dirt")?;
+    let t_stone = color(textures, "stone")?;
+    let t_cobble = color(textures, "cobblestone")?;
+    let t_planks = color(textures, "planks")?;
+    let t_log = color(textures, "log")?;
+    let t_leaves = color(textures, "leaves")?;
+    let t_water = color(textures, "water")?;
+    let t_lava = color(textures, "lava")?;
+    let t_obsidian = color(textures, "obsidian")?;
+    let t_glass = color(textures, "glass")?;
+    let t_sand = color(textures, "sand")?;
+
+    let n_stone = normal(textures, "stone")?;
+    let n_cobble = normal(textures, "cobblestone")?;
+    let n_planks = normal(textures, "planks")?;
+    let n_log = normal(textures, "log")?;
+    let n_lava = normal(textures, "lava")?;
+
+    Ok(vec![
         Material {
             name: "pasto",
             albedo: [0.95, 0.02, 0.00, 0.00],
             specular: 3.0,
             diffuse: Vec3::new(0.29, 0.52, 0.20),
+            texture: Some(t_grass),
             ..Default::default()
         },
         Material {
@@ -152,6 +177,7 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.92, 0.02, 0.00, 0.00],
             specular: 3.0,
             diffuse: Vec3::new(0.40, 0.27, 0.16),
+            texture: Some(t_dirt),
             ..Default::default()
         },
         Material {
@@ -159,6 +185,8 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.88, 0.06, 0.00, 0.00],
             specular: 10.0,
             diffuse: Vec3::new(0.42, 0.42, 0.45),
+            texture: Some(t_stone),
+            normal_map: Some(n_stone),
             ..Default::default()
         },
         Material {
@@ -166,6 +194,8 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.90, 0.05, 0.00, 0.00],
             specular: 6.0,
             diffuse: Vec3::new(0.36, 0.36, 0.38),
+            texture: Some(t_cobble),
+            normal_map: Some(n_cobble),
             ..Default::default()
         },
         Material {
@@ -173,6 +203,8 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.90, 0.10, 0.02, 0.00],
             specular: 12.0,
             diffuse: Vec3::new(0.56, 0.38, 0.22),
+            texture: Some(t_planks),
+            normal_map: Some(n_planks),
             ..Default::default()
         },
         Material {
@@ -180,6 +212,8 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.90, 0.06, 0.00, 0.00],
             specular: 8.0,
             diffuse: Vec3::new(0.36, 0.25, 0.15),
+            texture: Some(t_log),
+            normal_map: Some(n_log),
             ..Default::default()
         },
         Material {
@@ -187,17 +221,22 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.85, 0.04, 0.00, 0.00],
             specular: 4.0,
             diffuse: Vec3::new(0.18, 0.40, 0.14),
+            texture: Some(t_leaves),
             ..Default::default()
         },
         Material {
             name: "agua",
             // Mas reflexion que el vidrio y menos transmision: al atardecer el
             // agua devuelve el naranja del cielo, y ese reflejo es lo que la
-            // hace legible como agua en vez de como un hueco oscuro.
-            albedo: [0.10, 0.65, 0.30, 0.62],
+            // hace legible como agua en vez de como un hueco oscuro. El canal
+            // difuso deja de ser testimonial una vez hay textura: sin el, la
+            // superficie solo mostraba reflejos de una escena oscura y el
+            // estanque se leia negro.
+            albedo: [0.30, 0.60, 0.26, 0.50],
             specular: 180.0,
             refractive_index: 1.33,
             diffuse: Vec3::new(0.55, 0.78, 0.88),
+            texture: Some(t_water),
             ..Default::default()
         },
         Material {
@@ -213,6 +252,9 @@ fn build_materials() -> Vec<Material> {
             // sobrevive a la compresion en vez de irse a blanco.
             emission: Vec3::new(1.70, 0.30, 0.035),
             diffuse: Vec3::new(0.95, 0.30, 0.06),
+            texture: Some(t_lava),
+            normal_map: Some(n_lava),
+            emission_map: Some(t_lava),
             ..Default::default()
         },
         Material {
@@ -220,6 +262,7 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.15, 0.70, 0.60, 0.00],
             specular: 220.0,
             diffuse: Vec3::new(0.09, 0.07, 0.13),
+            texture: Some(t_obsidian),
             ..Default::default()
         },
         Material {
@@ -228,6 +271,7 @@ fn build_materials() -> Vec<Material> {
             specular: 250.0,
             refractive_index: 1.50,
             diffuse: Vec3::new(0.88, 0.94, 0.92),
+            texture: Some(t_glass),
             ..Default::default()
         },
         Material {
@@ -243,9 +287,10 @@ fn build_materials() -> Vec<Material> {
             albedo: [0.95, 0.03, 0.00, 0.00],
             specular: 4.0,
             diffuse: Vec3::new(0.78, 0.70, 0.50),
+            texture: Some(t_sand),
             ..Default::default()
         },
-    ]
+    ])
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +418,8 @@ fn terrain_top(x: i32, z: i32) -> i32 {
 
 /// Construye el diorama completo.
 pub fn build() -> Result<Scene, String> {
-    let materials = build_materials();
+    let mut textures = TextureManager::new();
+    let materials = build_materials(&mut textures)?;
     let mut world = VoxelWorld::new(BEDROCK_Y);
 
     carve_island(&mut world);
@@ -451,7 +497,7 @@ pub fn build() -> Result<Scene, String> {
         cubes,
         materials,
         lights,
-        textures: TextureManager::new(),
+        textures,
         // Relleno azulado: es la luz del cielo del atardecer rebotando. Que sea
         // frio hace que el naranja de la lava resalte por contraste.
         ambient: Vec3::new(0.070, 0.088, 0.140),
@@ -996,7 +1042,8 @@ mod tests {
     /// compilacion. Esta prueba ancla esa correspondencia.
     #[test]
     fn material_constants_match_their_index() {
-        let materials = build_materials();
+        let mut textures = TextureManager::new();
+        let materials = build_materials(&mut textures).expect("cargar texturas");
         for (id, expected) in [
             (GRASS, "pasto"),
             (DIRT, "tierra"),
