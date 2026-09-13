@@ -259,8 +259,15 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
         },
         Material {
             name: "obsidiana",
-            albedo: [0.15, 0.70, 0.60, 0.00],
-            specular: 220.0,
+            // Reflexion y especular moderados a proposito. Con valores altos,
+            // las caras horizontales del reborde reflejaban el cielo del
+            // atardecer, que es azul, y el lago de lava acababa rodeado de una
+            // banda azul que se leia como un foso de agua. Bajandolos, manda la
+            // textura negra y el reflejo queda como un brillo; las columnas
+            // verticales siguen devolviendo el naranja de la lava, que es donde
+            // el efecto si tiene sentido.
+            albedo: [0.35, 0.40, 0.34, 0.00],
+            specular: 160.0,
             diffuse: Vec3::new(0.09, 0.07, 0.13),
             texture: Some(t_obsidian),
             ..Default::default()
@@ -545,14 +552,23 @@ fn raise_outcrop(world: &mut VoxelWorld) {
             let dx = (x + 10) as f32 / 3.0;
             let dz = (z - 5) as f32 / 3.5;
             let bump = (1.0 - (dx * dx + dz * dz)).max(0.0);
-            let top = (bump * 4.5).round() as i32;
+            let top = (bump * 3.0).round() as i32;
             if top <= 0 {
                 continue;
             }
             let base = terrain_top(x, z);
-            for y in base..=(base + top) {
+            let cima = base + top;
+
+            // Roca en el cuerpo de la loma y pasto en la cima.
+            //
+            // Sin la capa de pasto, el afloramiento salia de la hierba como un
+            // pegote de roca oscura sin ninguna transicion: se leia como un
+            // monton de carbon, no como terreno. Con la cima cubierta, la roca
+            // solo asoma en las caras inclinadas, que es donde asoma de verdad.
+            for y in base..cima {
                 world.set(x, y, z, STONE);
             }
+            world.set(x, cima, z, GRASS);
         }
     }
 }
@@ -624,6 +640,13 @@ fn carve_water_and_lava(world: &mut VoxelWorld) {
     }
 
     // Anillo: las celdas pegadas al lago que no son lago.
+    //
+    // El borde es de adoquin y no de obsidiana. Como superficie plana, la
+    // obsidiana refleja hacia arriba, o sea el cielo, que al atardecer es azul:
+    // un anillo de obsidiana de este tamaño rodeaba la lava de una banda azul
+    // que se leia como un foso de agua. El adoquin ahi se lee como un bordillo
+    // de piedra, que es lo que un borde de lava deberia parecer, y deja la
+    // obsidiana solo donde su reflejo si aporta: las columnas verticales.
     for &(x, z) in &pool {
         for dx in -1..=1 {
             for dz in -1..=1 {
@@ -631,7 +654,7 @@ fn carve_water_and_lava(world: &mut VoxelWorld) {
                 if pool.contains(&(nx, nz)) || !inside_island(nx, nz) {
                     continue;
                 }
-                world.set(nx, 0, nz, OBSIDIAN);
+                world.set(nx, 0, nz, COBBLE);
                 world.set(nx, -1, nz, OBSIDIAN);
             }
         }
@@ -773,8 +796,13 @@ fn build_pier(world: &mut VoxelWorld) {
 
 /// Arboles: tronco de cuatro bloques y copa de hojas sin las esquinas, para que
 /// la silueta no se vea cuadrada.
+///
+/// Las posiciones importan: esta funcion corre despues de levantar la cabaña y
+/// los bloques se sobrescriben, asi que una copa que alcance el tejado se lo
+/// come. El arbol de la izquierda se planta sobre el afloramiento rocoso, que
+/// ademas lo aleja de la cabaña y le da altura para proyectar sombra sobre ella.
 fn plant_trees(world: &mut VoxelWorld) {
-    for (x, z) in [(-11, -1), (10, -4), (-4, 9)] {
+    for (x, z) in [(-11, 5), (10, -4), (-4, 9)] {
         let base = terrain_top(x, z) + 1;
 
         for y in base..base + 4 {
