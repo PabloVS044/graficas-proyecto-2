@@ -15,7 +15,7 @@
 
 use crate::cube::Cube;
 use crate::material::{Material, MaterialId};
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 use std::collections::HashMap;
 
 pub struct VoxelWorld {

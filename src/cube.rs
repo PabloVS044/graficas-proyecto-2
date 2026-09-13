@@ -7,7 +7,7 @@
 
 use crate::material::MaterialId;
 use crate::ray_intersect::{EPSILON, Intersect, RayIntersect};
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cube {
@@ -73,9 +73,9 @@ impl RayIntersect for Cube {
         let mut far_axis = 0usize;
 
         for axis in 0..3 {
-            let o = origin[axis];
-            let d = direction[axis];
-            let (lo, hi) = (self.min[axis], self.max[axis]);
+            let o = origin.get(axis);
+            let d = direction.get(axis);
+            let (lo, hi) = (self.min.get(axis), self.max.get(axis));
 
             if d.abs() < 1e-8 {
                 // Rayo paralelo a este par de planos: o siempre esta dentro
@@ -125,9 +125,9 @@ impl RayIntersect for Cube {
         // La cara golpeada es la del lado contrario al que apunta el rayo
         // cuando entra, y la del mismo lado cuando sale.
         let positive = if entering {
-            direction[axis] < 0.0
+            direction.get(axis) < 0.0
         } else {
-            direction[axis] > 0.0
+            direction.get(axis) > 0.0
         };
 
         let mut normal = Vec3::zeros();

@@ -8,6 +8,8 @@
 //! 2. `update_texture` de raylib sube exactamente este formato a la GPU, asi
 //!    que blitear el resultado cada frame es una sola llamada sin conversiones.
 
+use crate::vector::Vec3;
+
 /// Buffer de color RGBA8 con su resolucion.
 pub struct Framebuffer {
     pub width: usize,
@@ -67,7 +69,7 @@ impl Framebuffer {
 ///   espacio lineal, pero la pantalla espera sRGB. Sin esto la escena se ve
 ///   mucho mas oscura de lo que deberia.
 #[inline]
-pub fn encode_pixel(color: nalgebra_glm::Vec3) -> [u8; 4] {
+pub fn encode_pixel(color: Vec3) -> [u8; 4] {
     let tonemap = |c: f32| {
         let c = c.max(0.0);
         let mapped = c / (1.0 + c);

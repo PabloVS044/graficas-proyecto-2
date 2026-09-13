@@ -10,7 +10,7 @@ use crate::material::{Material, MaterialId};
 use crate::ray_intersect::{Intersect, RayIntersect};
 use crate::texture::TextureManager;
 use crate::voxel::VoxelWorld;
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 
 pub struct Scene {
     pub cubes: Vec<Cube>,
@@ -967,7 +967,7 @@ mod tests {
                 rng.signed() * 20.0,
             );
             let direction =
-                nalgebra_glm::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
+                crate::vector::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
 
             let fast = scene.hit(&origin, &direction);
             let slow = hit_brute_force(&scene, &origin, &direction);
@@ -1021,7 +1021,7 @@ mod tests {
             let center = (cube.min + cube.max) * 0.5;
             for _ in 0..12 {
                 let direction =
-                    nalgebra_glm::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
+                    crate::vector::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
                 let fast = scene.hit(&center, &direction);
                 let slow = hit_brute_force(&scene, &center, &direction);
                 assert_eq!(fast.is_intersecting, slow.is_intersecting);
@@ -1045,7 +1045,7 @@ mod tests {
                 rng.signed() * 20.0,
             );
             let direction =
-                nalgebra_glm::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
+                crate::vector::normalize(&Vec3::new(rng.signed(), rng.signed(), rng.signed()));
             let limit = rng.next_f32() * 30.0;
 
             let bounded = scene.hit_within(&origin, &direction, limit);

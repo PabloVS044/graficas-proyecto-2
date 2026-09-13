@@ -1,6 +1,6 @@
 //! Fuentes de luz.
 
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 
 /// Luz puntual: irradia en todas direcciones desde un punto.
 ///
@@ -45,7 +45,7 @@ impl Light {
         if !self.attenuates {
             return self.color * self.intensity;
         }
-        let d2 = nalgebra_glm::distance2(&self.position, point).max(1.0);
+        let d2 = crate::vector::distance2(&self.position, point).max(1.0);
         self.color * (self.intensity / d2)
     }
 }

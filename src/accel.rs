@@ -17,7 +17,14 @@
 //!
 //! El recorrido usa el algoritmo de Amanatides y Woo (*A Fast Voxel Traversal
 //! Algorithm*, 1987): el mismo DDA de Bresenham pero en 3D y con distancias
-//! reales. Visita las celdas **en orden de cercania**, lo que permite cortar en
+//! reales.
+//!
+//! Conviene aclararlo porque el nombre se presta a confusion: esto **no es
+//! raycasting**. El DDA aqui solo responde a la pregunta "¿con que cubo choca
+//! este rayo?", igual que lo haria recorrer la lista entera pero mas rapido. El
+//! metodo de render sigue siendo raytracing recursivo: `render::cast_ray` se
+//! llama a si misma para los reflejos y las refracciones, y lanza rayos de
+//! sombra hacia cada luz. Visita las celdas **en orden de cercania**, lo que permite cortar en
 //! cuanto se encuentra un impacto: si el mas cercano de esta celda cae dentro
 //! de la celda, ninguna celda posterior puede tener uno mejor.
 //!
@@ -31,7 +38,7 @@
 //! quedan contiguos en memoria, que es justo el orden en que se van a leer.
 
 use crate::cube::Cube;
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 
 /// Margen que se le resta al extremo maximo de un cubo al registrarlo, para que
 /// uno que termina justo en el borde de una celda no se registre tambien en la
@@ -187,17 +194,17 @@ impl Grid {
         let mut t_exit = f32::INFINITY;
 
         for axis in 0..3 {
-            let o = origin[axis];
-            let d = direction[axis];
+            let o = origin.get(axis);
+            let d = direction.get(axis);
             if d.abs() < 1e-8 {
-                if o < self.min[axis] || o > self.max[axis] {
+                if o < self.min.get(axis) || o > self.max.get(axis) {
                     return None;
                 }
                 continue;
             }
             let inv = 1.0 / d;
-            let mut t1 = (self.min[axis] - o) * inv;
-            let mut t2 = (self.max[axis] - o) * inv;
+            let mut t1 = (self.min.get(axis) - o) * inv;
+            let mut t2 = (self.max.get(axis) - o) * inv;
             if t1 > t2 {
                 std::mem::swap(&mut t1, &mut t2);
             }
@@ -244,7 +251,7 @@ impl Grid {
         let mut t_delta = [f32::INFINITY; 3];
 
         for axis in 0..3 {
-            let d = direction[axis];
+            let d = direction.get(axis);
             if d.abs() < 1e-8 {
                 continue;
             }
@@ -253,12 +260,12 @@ impl Grid {
 
             if d > 0.0 {
                 step[axis] = 1;
-                let boundary = self.min[axis] + (cell[axis] + 1) as f32 * self.cell_size;
-                t_max[axis] = t_enter + (boundary - entry[axis]) * inv;
+                let boundary = self.min.get(axis) + (cell[axis] + 1) as f32 * self.cell_size;
+                t_max[axis] = t_enter + (boundary - entry.get(axis)) * inv;
             } else {
                 step[axis] = -1;
-                let boundary = self.min[axis] + cell[axis] as f32 * self.cell_size;
-                t_max[axis] = t_enter + (entry[axis] - boundary) * inv;
+                let boundary = self.min.get(axis) + cell[axis] as f32 * self.cell_size;
+                t_max[axis] = t_enter + (entry.get(axis) - boundary) * inv;
             }
         }
 

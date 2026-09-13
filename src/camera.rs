@@ -5,7 +5,7 @@
 //! de un punto fijo: el resultado visual es el mismo (el diorama parece girar)
 //! y la escena no hay que reconstruirla en cada frame.
 
-use nalgebra_glm::{Vec3, cross, normalize};
+use crate::vector::{Vec3, cross, normalize};
 
 pub struct Camera {
     /// Punto alrededor del cual orbita la camara.

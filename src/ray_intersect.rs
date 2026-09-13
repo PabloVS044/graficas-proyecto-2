@@ -1,7 +1,7 @@
 //! Resultado de intersectar un rayo con un objeto y el rasgo que lo produce.
 
 use crate::material::MaterialId;
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 
 /// Desplazamiento minimo que se aplica al origen de los rayos secundarios.
 ///

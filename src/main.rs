@@ -8,6 +8,7 @@ mod ray_intersect;
 mod render;
 mod scene;
 mod texture;
+mod vector;
 mod voxel;
 
 use camera::{Camera, CameraFrame};
@@ -77,7 +78,7 @@ fn main() {
             env("SNAP_W", WINDOW_WIDTH as f32) as usize,
             env("SNAP_H", WINDOW_HEIGHT as f32) as usize,
         );
-        let focus = nalgebra_glm::Vec3::new(
+        let focus = crate::vector::Vec3::new(
             env("CAM_FX", scene.focus.x),
             env("CAM_FY", scene.focus.y),
             env("CAM_FZ", scene.focus.z),

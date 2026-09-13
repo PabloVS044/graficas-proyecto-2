@@ -26,11 +26,14 @@
 
 Un raytracer escrito desde cero. No hay motor 3D, no hay GPU y no hay ninguna
 libreria de graficos: `raylib` se usa unicamente para abrir la ventana, leer el
-teclado y mostrar en pantalla el buffer de pixeles que ya calculo la CPU, y
-`nalgebra-glm` solo aporta el tipo vector y operaciones como producto punto.
-Las intersecciones, el sombreado, las sombras, la reflexion, la refraccion, los
-mapas normales, la estructura de aceleracion y el paralelismo estan escritos a
-mano con la biblioteca estandar.
+teclado y mostrar en pantalla el buffer de pixeles que ya calculo la CPU. Todo
+lo demas (los vectores, las intersecciones, el sombreado, las sombras, la
+reflexion, la refraccion, los mapas normales, la estructura de aceleracion y el
+paralelismo) esta escrito a mano con la biblioteca estandar.
+
+Es **raytracing recursivo**, no raycasting: cada rayo que choca puede generar
+rayos nuevos (sombra, reflejo, refraccion) y el color final es el resultado de
+todos ellos.
 
 Cada pixel de la pantalla lanza un rayo. El rayo busca con que cubo choca
 primero, calcula cuanta luz le llega a ese punto y, si el material lo pide,
@@ -162,6 +165,7 @@ losa lisa.
 | `camera.rs` | Camara orbital y precalculo por cuadro |
 | `framebuffer.rs` | Buffer RGBA, tone mapping y correccion gamma |
 | `light.rs` | Luces puntuales con y sin atenuacion |
+| `vector.rs` | Vec3 y las seis operaciones que usa el trazado |
 
 ### Optica
 
@@ -278,6 +282,10 @@ material declarado se use de verdad en la escena.
 ## Dependencias
 
 ```toml
-raylib = "6.0"        # ventana, teclado y mostrar el buffer en pantalla
-nalgebra-glm = "0.19" # tipo Vec3 y producto punto
+raylib = "6.0"   # ventana, teclado y mostrar el buffer en pantalla
 ```
+
+Una sola, y solo para hablar con el sistema operativo: abrir la ventana, leer el
+teclado y subir a pantalla el buffer de pixeles que ya calculo la CPU. Las
+matematicas de vectores estan escritas a mano en `vector.rs` con `std` y nada
+mas, igual que el resto del raytracer.

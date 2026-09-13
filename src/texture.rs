@@ -16,7 +16,7 @@
 // ruido.
 #![allow(dead_code)]
 
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 use std::collections::HashMap;
 
 /// Indice de una textura dentro del `TextureManager`.
@@ -141,7 +141,7 @@ impl TextureManager {
     #[inline]
     pub fn sample_normal(&self, id: TextureId, u: f32, v: f32) -> Vec3 {
         let c = self.textures[id].sample(u, v);
-        nalgebra_glm::normalize(&Vec3::new(
+        crate::vector::normalize(&Vec3::new(
             c.x * 2.0 - 1.0,
             c.y * 2.0 - 1.0,
             c.z * 2.0 - 1.0,

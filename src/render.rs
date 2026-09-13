@@ -5,7 +5,7 @@ use crate::framebuffer::{Framebuffer, encode_pixel};
 use crate::material::Material;
 use crate::ray_intersect::{EPSILON, Intersect};
 use crate::scene::Scene;
-use nalgebra_glm::{Vec3, dot, normalize, reflect_vec};
+use crate::vector::{Vec3, dot, normalize, reflect_vec};
 
 /// Rebotes maximos de un rayo. Cada nivel multiplica el trabajo, asi que se
 /// mantiene bajo: con 3 ya se ve un reflejo dentro de un reflejo y el cristal
@@ -142,7 +142,7 @@ fn shading_normal(scene: &Scene, material: &Material, hit: &Intersect) -> Vec3 {
 /// una mancha negra.
 fn light_transmittance(scene: &Scene, point: &Vec3, normal: &Vec3, light_pos: &Vec3) -> Vec3 {
     let to_light = light_pos - point;
-    let mut remaining = nalgebra_glm::length(&to_light);
+    let mut remaining = crate::vector::length(&to_light);
     let direction = to_light / remaining;
 
     let mut origin = offset_origin(point, normal, &direction);

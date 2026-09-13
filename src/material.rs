@@ -5,7 +5,7 @@
 //! dos bloques distintos nunca reaccionan igual ante la misma lampara.
 
 use crate::texture::TextureId;
-use nalgebra_glm::Vec3;
+use crate::vector::Vec3;
 
 /// Indice de un material dentro de `Scene::materials`.
 pub type MaterialId = usize;
