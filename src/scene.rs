@@ -259,16 +259,18 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
         },
         Material {
             name: "obsidiana",
-            // Reflexion y especular moderados a proposito. Con valores altos,
-            // las caras horizontales del reborde reflejaban el cielo del
-            // atardecer, que es azul, y el lago de lava acababa rodeado de una
-            // banda azul que se leia como un foso de agua. Bajandolos, manda la
-            // textura negra y el reflejo queda como un brillo; las columnas
-            // verticales siguen devolviendo el naranja de la lava, que es donde
-            // el efecto si tiene sentido.
-            albedo: [0.35, 0.40, 0.34, 0.00],
-            specular: 160.0,
-            diffuse: Vec3::new(0.09, 0.07, 0.13),
+            // Piedra negra pulida, no espejo de plata.
+            //
+            // El reflejo se suma sin teñirse con el color de la superficie, asi
+            // que con un peso alto un material negro devolvia la hierba y el
+            // cielo a brillo completo y las columnas se leian como paneles de
+            // agua. Ademas 0.34 es irreal: un dielectrico pulido refleja en
+            // torno al 5% de frente. Con 0.12 y un especular estrecho manda la
+            // textura negra, la superficie se ve pulida, y lo poco que refleja
+            // sigue viendose porque lo que tiene enfrente es lava, que brilla.
+            albedo: [0.60, 0.35, 0.12, 0.00],
+            specular: 320.0,
+                        diffuse: Vec3::new(0.09, 0.07, 0.13),
             texture: Some(t_obsidian),
             ..Default::default()
         },
