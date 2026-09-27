@@ -65,8 +65,6 @@ ffmpeg -framerate 30 -i frames/%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 di
 ## La escena
 
 ```
-              chimenea con brasas
-                    |
             ╔═══════════════╗
             ║   cabaña de   ║   ventanas de cristal, lampara dentro
             ║    tablones   ║   troncos en las esquinas
@@ -143,8 +141,7 @@ pero con una sola fuente lateral media vuelta de la orbita transcurria mirando
 una silueta negra. La segunda es fria y opuesta, y ademas separa por color lo
 iluminado de lo que esta en sombra.
 
-**La chimenea y la ventana trasera existen** porque desde atras la cabaña era una
-losa lisa.
+**La ventana trasera existe** porque desde atras la cabaña era una losa lisa.
 
 ## Como esta hecho
 

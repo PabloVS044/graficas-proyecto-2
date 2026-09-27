@@ -315,7 +315,7 @@ const ISLAND_RZ: f32 = 10.0;
 const BEDROCK_Y: i32 = -5;
 
 // Caja de la cabaña (extremos incluidos).
-const CABIN_X: (i32, i32) = (-9, -3);
+const CABIN_X: (i32, i32) = (-7, -1);
 const CABIN_Z: (i32, i32) = (-7, -2);
 
 // Estanque, franja de obsidiana y lago de lava.
@@ -679,10 +679,13 @@ fn carve_water_and_lava(world: &mut VoxelWorld) {
 
 /// Camino de adoquin de la puerta de la cabaña a la orilla del estanque.
 fn build_path(world: &mut VoxelWorld) {
-    // Tramo que baja de la puerta al borde del agua.
+    // Tramo que baja de la puerta al borde del agua. Las dos columnas son las
+    // mismas que las de la puerta, para que el camino salga de ella y no de un
+    // punto cualquiera de la fachada.
+    let (x0, _) = CABIN_X;
     for z in -1..=0 {
-        world.set(-6, 0, z, COBBLE);
-        world.set(-5, 0, z, COBBLE);
+        world.set(x0 + 3, 0, z, COBBLE);
+        world.set(x0 + 4, 0, z, COBBLE);
     }
     // Andador a lo largo de la orilla, de punta a punta, que conecta el
     // estanque con la franja de obsidiana.
@@ -697,8 +700,12 @@ fn build_cabin(world: &mut VoxelWorld) {
     let (x0, x1) = CABIN_X;
     let (z0, z1) = CABIN_Z;
 
-    // Piso y paredes. El piso va sobre el pasto, las paredes cuatro bloques.
-    world.fill((x0, x1), (1, 1), (z0, z1), PLANKS);
+    // Piso y paredes.
+    //
+    // El piso ocupa la misma capa que el pasto, no la de encima: asi se entra
+    // sin escalon y el hueco de la puerta queda a la altura a la que se camina.
+    // Un bloque mas arriba, la casa se leia como una tarima con paredes.
+    world.fill((x0, x1), (0, 0), (z0, z1), PLANKS);
     for y in 1..=4 {
         for x in x0..=x1 {
             world.set(x, y, z0, PLANKS);
@@ -722,29 +729,29 @@ fn build_cabin(world: &mut VoxelWorld) {
     // Ventanas de cristal en la pared del frente (la que mira al estanque) y
     // una lateral, a la altura de los ojos.
     for y in 2..=3 {
-        world.set(-8, y, z1, GLASS);
-        world.set(-7, y, z1, GLASS);
-        world.set(-4, y, z1, GLASS);
+        world.set(x0 + 1, y, z1, GLASS);
+        world.set(x0 + 2, y, z1, GLASS);
+        world.set(x0 + 5, y, z1, GLASS);
         world.set(x0, y, -5, GLASS);
         world.set(x0, y, -4, GLASS);
     }
 
     // Puerta: un hueco de dos bloques en la pared del frente.
-    world.clear(-6, 1, z1);
-    world.clear(-6, 2, z1);
-    world.clear(-5, 1, z1);
-    world.clear(-5, 2, z1);
+    world.clear(x0 + 3, 1, z1);
+    world.clear(x0 + 3, 2, z1);
+    world.clear(x0 + 4, 1, z1);
+    world.clear(x0 + 4, 2, z1);
 
     // Lampara dentro de la cabaña. No se ve directamente, pero su luz sale por
     // la ventana: es lo que hace que el cristal se lea como cristal y no como
     // un agujero.
-    world.set(-7, 3, -5, GLOWSTONE);
+    world.set(x0 + 2, 3, -5, GLOWSTONE);
 
     // Ventana tambien en la pared de atras. No es simetria por simetria: el
     // diorama gira, y sin ella la cabaña vista desde atras es una losa lisa.
     for y in 2..=3 {
-        world.set(-7, y, z0, GLASS);
-        world.set(-6, y, z0, GLASS);
+        world.set(x0 + 2, y, z0, GLASS);
+        world.set(x0 + 3, y, z0, GLASS);
     }
 
     // Techo a dos aguas: tres escalones que se van cerrando hacia el centro,
@@ -756,16 +763,6 @@ fn build_cabin(world: &mut VoxelWorld) {
     ];
     for (y, xs, zs) in roof {
         world.fill(xs, (y, y), zs, PLANKS);
-    }
-
-    // Chimenea de piedra que atraviesa el techo, con brasas encendidas arriba.
-    //
-    // Cumple dos funciones: rompe la silueta del techo, que desde atras era una
-    // losa rectangular, y pone una fuente de luz calida en lo alto que se ve
-    // desde cualquier angulo de la orbita.
-    let (cx, cz) = (-8, -6);
-    for y in 1..=8 {
-        world.set(cx, y, cz, COBBLE);
     }
 }
 
@@ -785,22 +782,26 @@ fn build_cabin(world: &mut VoxelWorld) {
 ///   convertiria en un puente; un muelle termina en agua abierta.
 fn build_pier(world: &mut VoxelWorld) {
     // Pasarela recta de dos bloques de ancho, desde la orilla hacia el agua.
+    //
+    // Va a la altura del suelo, no encima: la hierba y el camino se pisan a y=1
+    // y la tarima ocupa esa misma capa, de modo que se sale de la puerta y se
+    // entra al muelle sin escalon. Un bloque mas arriba se veia como una tarima
+    // montada sobre el estanque en vez de como una continuacion del camino.
+    //
     // Se detiene antes de la orilla opuesta: un tablero que cruza el estanque
     // de lado a lado es un puente, y lo que se busca es un muelle, que tiene
     // que terminar en agua abierta.
+    //
+    // Al quedar al ras desaparecen los pilotes: la capa de debajo es la arena
+    // del fondo, asi que quedarian enterrados y no se verian desde ningun
+    // angulo.
     for x in -4..=-3 {
         for z in 1..=4 {
-            world.set(x, 1, z, PLANKS);
-        }
-    }
-
-    // Pilotes: del nivel del agua hasta hundirse en la arena del fondo.
-    for (x, z) in [(-4, 2), (-3, 2), (-4, 4), (-3, 4)] {
-        for y in -1..=0 {
-            world.set(x, y, z, LOG);
+            world.set(x, 0, z, PLANKS);
         }
     }
 }
+
 
 /// Arboles: tronco de cuatro bloques y copa de hojas sin las esquinas, para que
 /// la silueta no se vea cuadrada.
@@ -848,8 +849,8 @@ fn plant_trees(world: &mut VoxelWorld) {
 fn glowstone_blocks() -> Vec<(i32, i32, i32)> {
     vec![
         // A los lados de la puerta, apoyadas en el suelo.
-        (-7, 1, -1),
-        (-4, 1, -1),
+        (CABIN_X.0 + 2, 1, -1),
+        (CABIN_X.0 + 5, 1, -1),
     ]
 }
 
