@@ -9,6 +9,7 @@ use crate::light::Light;
 use crate::material::{Material, MaterialId};
 use crate::ray_intersect::{Intersect, RayIntersect};
 use crate::skybox::Skybox;
+use crate::terrain::Terrain;
 use crate::texture::TextureManager;
 use crate::voxel::VoxelWorld;
 use crate::vector::Vec3;
@@ -110,6 +111,7 @@ pub const BIRCH_LOG: MaterialId = 12;
 pub const BIRCH_LEAVES: MaterialId = 13;
 pub const SPRUCE_LOG: MaterialId = 14;
 pub const SPRUCE_LEAVES: MaterialId = 15;
+pub const DIRT: MaterialId = 16;
 
 /// Los materiales del diorama.
 ///
@@ -329,6 +331,16 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             texture: Some(t_spruce_leaves),
             ..Default::default()
         },
+        Material {
+            name: "tierra",
+            // Solo se ve donde una colina corta el terreno en vertical: el
+            // escalon deja a la vista la capa de debajo del pasto.
+            albedo: [0.92, 0.02, 0.00, 0.00],
+            specular: 2.0,
+            diffuse: Vec3::new(0.40, 0.28, 0.18),
+            texture: Some(t_dirt),
+            ..Default::default()
+        },
     ])
 }
 
@@ -337,18 +349,19 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
 // ---------------------------------------------------------------------------
 
 /// Semiejes de la isla. La forma no es un rectangulo sino un "squircle"
-/// (`|x/a|^3 + |z/b|^3 <= 1`): tiene las esquinas redondeadas, que se ve mucho
+/// (`|x/a|^4 + |z/b|^4 <= 1`): tiene las esquinas redondeadas, que se ve mucho
 /// mas natural que un bloque cuadrado, sin necesidad de dibujar el contorno a
-/// mano.
-const ISLAND_RX: f32 = 16.0;
-const ISLAND_RZ: f32 = 13.0;
+/// mano. El exponente 4 (y no 3) llena mas las esquinas, que es donde cabe la
+/// zona de colinas de `WILD_X` x `WILD_Z`.
+const ISLAND_RX: f32 = 20.0;
+const ISLAND_RZ: f32 = 16.0;
 
 /// Profundidad a la que llega la roca de la isla.
 const BEDROCK_Y: i32 = -5;
 
 // Caja de la cabaña (extremos incluidos).
-const CABIN_X: (i32, i32) = (-7, -1);
-const CABIN_Z: (i32, i32) = (-9, -4);
+const CABIN_X: (i32, i32) = (-11, -5);
+const CABIN_Z: (i32, i32) = (-7, -2);
 
 // Estanque, franja de obsidiana y lago de lava.
 //
@@ -356,21 +369,30 @@ const CABIN_Z: (i32, i32) = (-9, -4);
 // orbita, si estuvieran alineados en profundidad habria angulos desde los que
 // uno taparia completamente al otro. Asi los tres se ven juntos desde el frente
 // y desde los dos costados.
-const POND_X: (i32, i32) = (-9, -2);
-const POND_Z: (i32, i32) = (2, 8);
-const OBSIDIAN_X: (i32, i32) = (2, 3);
-const OBSIDIAN_Z: (i32, i32) = (2, 9);
-const LAVA_X: (i32, i32) = (5, 11);
-const LAVA_Z: (i32, i32) = (2, 7);
+const POND_X: (i32, i32) = (-13, -6);
+const POND_Z: (i32, i32) = (4, 10);
+const OBSIDIAN_X: (i32, i32) = (-2, -1);
+const OBSIDIAN_Z: (i32, i32) = (4, 11);
+const LAVA_X: (i32, i32) = (1, 7);
+const LAVA_Z: (i32, i32) = (4, 9);
+
+/// Zona de 16x16 sin nada construido: aqui el terreno es puro ruido, sin
+/// aplanar. La rubrica pide generacion procedural en al menos 16x16 cubos; el
+/// resto de la isla tambien sale del ruido, pero tiene zonas aplanadas encima
+/// para la cabaña, el agua y la lava. Lo construido se agrupo al frente y a la
+/// izquierda justamente para dejar este cuadrante libre. La prueba
+/// `wild_zone_is_procedural` comprueba que siga asi si se mueve algo.
+const WILD_X: (i32, i32) = (0, 15);
+const WILD_Z: (i32, i32) = (-13, 2);
 
 /// Fila del andador de adoquin que corre a lo largo de la orilla.
-const WALK_Z: i32 = 0;
+const WALK_Z: i32 = 2;
 
 #[inline]
 fn inside_island(x: i32, z: i32) -> bool {
     let fx = (x as f32 + 0.5) / ISLAND_RX;
     let fz = (z as f32 + 0.5) / ISLAND_RZ;
-    fx.abs().powi(3) + fz.abs().powi(3) <= 1.0
+    fx.abs().powi(4) + fz.abs().powi(4) <= 1.0
 }
 
 /// `true` si la celda y todo lo que la rodea a `margin` de distancia siguen
@@ -396,66 +418,79 @@ fn in_box(x: i32, z: i32, xs: (i32, i32), zs: (i32, i32)) -> bool {
     x >= xs.0 && x <= xs.1 && z >= zs.0 && z <= zs.1
 }
 
-/// Zonas que tienen que quedar perfectamente planas a la altura 0: donde se
-/// apoyan la cabaña, el agua, la lava y el camino.
-fn is_flat_zone(x: i32, z: i32) -> bool {
-    in_box(x, z, (CABIN_X.0 - 1, CABIN_X.1 + 1), (CABIN_Z.0 - 1, CABIN_Z.1 + 1))
-        || in_box(x, z, (POND_X.0 - 1, POND_X.1 + 1), (POND_Z.0 - 1, POND_Z.1 + 1))
-        || in_box(x, z, OBSIDIAN_X, OBSIDIAN_Z)
-        || in_box(x, z, (LAVA_X.0 - 1, LAVA_X.1 + 1), (LAVA_Z.0 - 1, LAVA_Z.1 + 1))
-        || in_box(x, z, (POND_X.0 - 1, OBSIDIAN_X.1), (CABIN_Z.1 + 1, WALK_Z))
+/// Columnas del canal por donde el estanque se desborda hacia la cascada.
+const CHANNEL_X: (i32, i32) = (-8, -7);
+
+/// Altura maxima de las colinas, en bloques sobre el nivel del agua.
+const MAX_HILL: f32 = 6.0;
+
+/// Ancho, en celdas, de la rampa entre una zona aplanada y el terreno libre.
+const BLEND_CELLS: f32 = 4.0;
+
+/// Zonas que tienen que quedar a la altura 0 porque algo se apoya en ellas: la
+/// cabaña, el estanque, la lava, el camino y el canal de la cascada. Cada una
+/// es una caja `(xs, zs)` con los extremos incluidos.
+const FLAT_PADS: [((i32, i32), (i32, i32)); 6] = [
+    ((CABIN_X.0 - 1, CABIN_X.1 + 1), (CABIN_Z.0 - 1, CABIN_Z.1 + 1)),
+    ((POND_X.0 - 1, POND_X.1 + 1), (POND_Z.0 - 1, POND_Z.1 + 1)),
+    (OBSIDIAN_X, OBSIDIAN_Z),
+    ((LAVA_X.0 - 1, LAVA_X.1 + 1), (LAVA_Z.0 - 1, LAVA_Z.1 + 1)),
+    ((POND_X.0 - 1, OBSIDIAN_X.1), (CABIN_Z.1 + 1, WALK_Z)),
+    ((CHANNEL_X.0 - 1, CHANNEL_X.1 + 1), (POND_Z.1 + 1, 99)),
+];
+
+/// Distancia (en celdas, tipo ajedrez) de la columna a la zona aplanada mas
+/// cercana. 0 si esta dentro de una.
+fn pad_distance(x: i32, z: i32) -> i32 {
+    FLAT_PADS
+        .iter()
+        .map(|&((x0, x1), (z0, z1))| {
+            let dx = (x0 - x).max(x - x1).max(0);
+            let dz = (z0 - z).max(z - z1).max(0);
+            dx.max(dz)
+        })
+        .min()
+        .unwrap_or(i32::MAX)
 }
 
-/// Ruido de valor escrito a mano (sin librerias): se hashean las esquinas de
-/// una rejilla gruesa y se interpola suavemente entre ellas.
-///
-/// Se usa solo para ondular un poco el terreno; con altura constante la isla se
-/// ve como una mesa.
-fn value_noise(x: f32, z: f32) -> f32 {
-    #[inline]
-    fn hash(ix: i32, iz: i32) -> f32 {
-        // Mezcla entera tipo xorshift. Determinista y sin estado.
-        let mut h = (ix as u32).wrapping_mul(0x27D4_EB2D) ^ (iz as u32).wrapping_mul(0x1656_67B1);
-        h ^= h >> 15;
-        h = h.wrapping_mul(0x2C1B_3C6D);
-        h ^= h >> 12;
-        h = h.wrapping_mul(0x2974_5B7D);
-        h ^= h >> 16;
-        (h >> 8) as f32 / (1u32 << 24) as f32
-    }
-
-    let (x0, z0) = (x.floor(), z.floor());
-    let (fx, fz) = (x - x0, z - z0);
-    // Curva suave: quita la apariencia de rombos que deja la interpolacion
-    // lineal pura.
-    let (ux, uz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
-
-    let (ix, iz) = (x0 as i32, z0 as i32);
-    let c00 = hash(ix, iz);
-    let c10 = hash(ix + 1, iz);
-    let c01 = hash(ix, iz + 1);
-    let c11 = hash(ix + 1, iz + 1);
-
-    let a = c00 + (c10 - c00) * ux;
-    let b = c01 + (c11 - c01) * ux;
-    a + (b - a) * uz
+#[inline]
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// Altura del bloque mas alto de terreno en esa columna.
-fn terrain_top(x: i32, z: i32) -> i32 {
-    if is_flat_zone(x, z) {
+///
+/// Tres pasos:
+///
+/// 1. **Ruido fractal** de tres octavas a escala 1/11: colinas de unas once
+///    celdas de ancho con el contorno roto por las octavas finas.
+/// 2. **Curva de altura**: el ruido se recorta abajo para que haya llano entre
+///    colinas (con el ruido crudo toda la isla seria una ondulacion pareja) y
+///    se eleva a 1.4 para que las cimas sean mas escarpadas que las faldas.
+/// 3. **Aplanado suave** cerca de lo construido: la altura se multiplica por
+///    un factor que vale 0 dentro de las zonas planas y sube a 1 en
+///    `BLEND_CELLS` celdas. Asi las colinas bajan en rampa hasta la cabaña o el
+///    estanque en vez de cortarse en un muro.
+fn terrain_top(terrain: &Terrain, x: i32, z: i32) -> i32 {
+    let distance = pad_distance(x, z);
+    if distance == 0 {
         return 0;
     }
-    // Escala 1/7: colinas de unas siete celdas de ancho.
-    let n = value_noise(x as f32 / 7.0, z as f32 / 7.0);
 
-    // Cerca del borde de la isla el terreno baja, para que no termine en un
-    // acantilado recto por todos lados.
+    let n = terrain.fbm(x as f32 / 11.0, z as f32 / 11.0, 3);
+    let shaped = ((n - 0.30) / 0.45).clamp(0.0, 1.0).powf(1.4);
+
+    // Cerca del borde de la isla el terreno baja un poco: una colina de seis
+    // bloques justo en la orilla deja un muro sin transicion.
     let fx = (x as f32 + 0.5) / ISLAND_RX;
     let fz = (z as f32 + 0.5) / ISLAND_RZ;
-    let edge = 1.0 - (fx.abs().powi(3) + fz.abs().powi(3)).clamp(0.0, 1.0);
+    let edge = 1.0 - (fx.abs().powi(4) + fz.abs().powi(4)).clamp(0.0, 1.0);
+    let edge = smoothstep(0.0, 0.30, edge);
 
-    ((n * 3.4 * edge.powf(0.45)) - 0.45).round().clamp(0.0, 3.0) as i32
+    let blend = smoothstep(0.0, BLEND_CELLS, distance as f32);
+
+    (shaped * MAX_HILL * edge * blend).round() as i32
 }
 
 /// Posicion de la luz principal del atardecer.
@@ -464,20 +499,30 @@ const SUN_POSITION: Vec3 = Vec3::new(40.0, 23.0, 26.0);
 /// Punto alrededor del cual orbita la camara.
 const FOCUS: Vec3 = Vec3::new(-1.0, 1.5, 0.0);
 
+/// Semilla por defecto: la que da la composicion que se ve en el video.
+const DEFAULT_SEED: u32 = 3;
+
 /// Construye el diorama completo.
 pub fn build() -> Result<Scene, String> {
     let mut textures = TextureManager::new();
     let materials = build_materials(&mut textures)?;
     let mut world = VoxelWorld::new(BEDROCK_Y);
 
-    carve_island(&mut world);
-    raise_outcrop(&mut world);
+    // Semilla del terreno. Se puede cambiar con la variable de entorno SEED
+    // para comprobar que el terreno se genera y no esta dibujado a mano.
+    let seed = std::env::var("SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_SEED);
+    let terrain = Terrain::new(seed);
+
+    carve_island(&mut world, &terrain);
     carve_water_and_lava(&mut world);
     build_path(&mut world);
     build_cabin(&mut world);
     build_pier(&mut world);
     build_waterfall(&mut world);
-    plant_trees(&mut world);
+    let trees = plant_trees(&mut world, &terrain);
 
     let lamparas = glowstone_blocks();
     for &(x, y, z) in &lamparas {
@@ -500,6 +545,19 @@ pub fn build() -> Result<Scene, String> {
 
     let grid = Grid::build(&cubes);
 
+    let wild: Vec<i32> = (WILD_X.0..=WILD_X.1)
+        .flat_map(|x| (WILD_Z.0..=WILD_Z.1).map(move |z| (x, z)))
+        .map(|(x, z)| terrain_top(&terrain, x, z))
+        .collect();
+    println!(
+        "terreno: semilla {}, {} arboles, zona libre {}x{} con alturas {}..{}",
+        terrain.seed(),
+        trees,
+        WILD_X.1 - WILD_X.0 + 1,
+        WILD_Z.1 - WILD_Z.0 + 1,
+        wild.iter().min().unwrap_or(&0),
+        wild.iter().max().unwrap_or(&0),
+    );
     println!(
         "diorama: {} bloques -> {} cubos visibles ({} enterrados descartados)",
         voxels,
@@ -557,8 +615,10 @@ pub fn build() -> Result<Scene, String> {
     })
 }
 
-/// Isla: pasto en la superficie y roca hasta el fondo.
-fn carve_island(world: &mut VoxelWorld) {
+/// Isla: pasto en la superficie, dos capas de tierra y roca hasta el fondo,
+/// como una columna de Minecraft. La tierra se ve donde una colina corta el
+/// terreno en vertical y en el contorno del acantilado.
+fn carve_island(world: &mut VoxelWorld, terrain: &Terrain) {
     let rx = ISLAND_RX.ceil() as i32;
     let rz = ISLAND_RZ.ceil() as i32;
 
@@ -567,49 +627,13 @@ fn carve_island(world: &mut VoxelWorld) {
             if !inside_island(x, z) {
                 continue;
             }
-            let top = terrain_top(x, z);
+            let top = terrain_top(terrain, x, z);
             world.set(x, top, z, GRASS);
-            world.set(x, top - 1, z, STONE);
-            world.set(x, top - 2, z, STONE);
+            world.set(x, top - 1, z, DIRT);
+            world.set(x, top - 2, z, DIRT);
             for y in BEDROCK_Y..=(top - 3) {
                 world.set(x, y, z, STONE);
             }
-        }
-    }
-}
-
-/// Afloramiento de roca al fondo de la isla.
-///
-/// Rompe la silueta, que sin el es un disco plano, y le da al arbol de la
-/// izquierda un sitio elevado desde donde proyectar sombra sobre la cabaña.
-fn raise_outcrop(world: &mut VoxelWorld) {
-    for x in -16..=-10 {
-        for z in 2..=10 {
-            if !inside_island(x, z) {
-                continue;
-            }
-            // Altura en forma de loma: maxima en el centro del afloramiento y
-            // bajando hacia los bordes.
-            let dx = (x + 13) as f32 / 3.0;
-            let dz = (z - 6) as f32 / 3.5;
-            let bump = (1.0 - (dx * dx + dz * dz)).max(0.0);
-            let top = (bump * 3.0).round() as i32;
-            if top <= 0 {
-                continue;
-            }
-            let base = terrain_top(x, z);
-            let cima = base + top;
-
-            // Roca en el cuerpo de la loma y pasto en la cima.
-            //
-            // Sin la capa de pasto, el afloramiento salia de la hierba como un
-            // pegote de roca oscura sin ninguna transicion: se leia como un
-            // monton de carbon, no como terreno. Con la cima cubierta, la roca
-            // solo asoma en las caras inclinadas, que es donde asoma de verdad.
-            for y in base..cima {
-                world.set(x, y, z, STONE);
-            }
-            world.set(x, cima, z, GRASS);
         }
     }
 }
@@ -845,7 +869,7 @@ fn build_pier(world: &mut VoxelWorld) {
     // Al quedar al ras desaparecen los pilotes: la capa de debajo es la arena
     // del fondo, asi que quedarian enterrados y no se verian desde ningun
     // angulo.
-    for x in -6..=-5 {
+    for x in (POND_X.0 + 3)..=(POND_X.0 + 4) {
         for z in POND_Z.0..=(POND_Z.0 + 4) {
             world.set(x, 0, z, PLANKS);
         }
@@ -862,8 +886,6 @@ fn build_pier(world: &mut VoxelWorld) {
 /// cortarla a ras de la roca la haria ver como una mancha azul pegada a la
 /// pared.
 fn build_waterfall(world: &mut VoxelWorld) {
-    const CHANNEL_X: (i32, i32) = (-4, -3);
-
     // Canal: del estanque a la orilla. Se limpia lo que haya encima por si el
     // terreno ondula ahi, asi el agua pasa por una zanja en vez de enterrarse.
     for x in CHANNEL_X.0..=CHANNEL_X.1 {
@@ -871,7 +893,7 @@ fn build_waterfall(world: &mut VoxelWorld) {
             if !inside_island(x, z) {
                 continue;
             }
-            for y in 1..=4 {
+            for y in 1..=(MAX_HILL as i32 + 1) {
                 world.clear(x, y, z);
             }
             world.set(x, 0, z, WATER);
@@ -893,44 +915,99 @@ fn build_waterfall(world: &mut VoxelWorld) {
     }
 }
 
-/// Arboles: robles, abedules y pinos.
+/// Arboles colocados de forma procedural.
 ///
-/// Las posiciones importan: esta funcion corre despues de levantar la cabaña y
-/// los bloques se sobrescriben, asi que una copa que alcance el tejado se lo
-/// come. El arbol de la izquierda se planta sobre el afloramiento rocoso, que
-/// ademas lo aleja de la cabaña y le da altura para proyectar sombra sobre ella.
-fn plant_trees(world: &mut VoxelWorld) {
-    // Robles. El que estaba al frente, en (-4, 9), se movio al borde derecho:
-    // ocupaba justo el sitio por donde sale la cascada, y delante del lago de
-    // lava tapaba las columnas de obsidiana y su reflejo.
-    for (x, z) in [(-14, 6), (13, -3), (14, 5), (-12, -10)] {
-        plant_round_tree(world, x, z, 4, LOG, LEAVES);
-    }
+/// La isla se divide en celdas de 6x6 y cada celda tira un dado: si sale,
+/// prueba hasta tres posiciones al azar dentro de ella y planta el arbol en la
+/// primera que sirva. Repartirlos por celdas, en vez de tirar el dado columna
+/// por columna, evita que dos arboles queden pegados y que se formen claros
+/// enormes; los reintentos evitan que una celda con un solo sitio malo se
+/// quede vacia.
+///
+/// El tipo depende de la altura, como los biomas de Minecraft: pinos en las
+/// cimas y robles o abedules en el llano. Se descartan las posiciones donde un
+/// arbol estorbaria: junto a lo construido (la copa se comeria el tejado),
+/// en pendientes fuertes (el tronco quedaria flotando sobre un escalon) y en
+/// la orilla (media copa colgando sobre el vacio).
+fn plant_trees(world: &mut VoxelWorld, terrain: &Terrain) -> usize {
+    const CELL: i32 = 6;
+    const DENSITY: f32 = 0.55;
+    // En la zona de colinas hay menos: es donde se luce el terreno, y un
+    // bosque cerrado lo tapaba por completo.
+    const WILD_DENSITY: f32 = 0.30;
+    const ATTEMPTS: u32 = 3;
 
-    // Abedules: mas altos y claros que los robles. La corteza blanca destaca
-    // contra el pasto y rompe la paleta de cafes del resto de la madera.
-    for (x, z) in [(7, -4), (-13, -5), (-12, 10)] {
-        plant_round_tree(world, x, z, 5, BIRCH_LOG, BIRCH_LEAVES);
-    }
+    let rx = ISLAND_RX.ceil() as i32;
+    let rz = ISLAND_RZ.ceil() as i32;
+    let mut planted: Vec<(i32, i32)> = Vec::new();
 
-    // Pinos al fondo: oscuros y en punta, le dan a la silueta de la isla una
-    // altura que los arboles redondos no tienen.
-    for (x, z, height) in [(3, -11, 6), (8, -10, 5), (12, -9, 6)] {
-        plant_spruce(world, x, z, height);
+    for cx in (-rx).div_euclid(CELL)..=rx.div_euclid(CELL) {
+        for cz in (-rz).div_euclid(CELL)..=rz.div_euclid(CELL) {
+            let (mid_x, mid_z) = (cx * CELL + CELL / 2, cz * CELL + CELL / 2);
+            let density = if in_box(mid_x, mid_z, WILD_X, WILD_Z) {
+                WILD_DENSITY
+            } else {
+                DENSITY
+            };
+            if terrain.hash01(cx, cz, 100) > density {
+                continue;
+            }
+            let spot = (0..ATTEMPTS).find_map(|attempt| {
+                let salt = 101 + attempt * 2;
+                let x = cx * CELL + (terrain.hash01(cx, cz, salt) * CELL as f32) as i32;
+                let z = cz * CELL + (terrain.hash01(cx, cz, salt + 1) * CELL as f32) as i32;
+                // Dos celdas vecinas pueden elegir puntos pegados a su borde
+                // comun; con menos de 3 de separacion una copa se come el
+                // tronco del otro.
+                let spaced = planted
+                    .iter()
+                    .all(|&(px, pz)| (px - x).abs().max((pz - z).abs()) >= 3);
+                (spaced && tree_fits(terrain, x, z)).then_some((x, z))
+            });
+            let Some((x, z)) = spot else {
+                continue;
+            };
+            let h = terrain_top(terrain, x, z);
+
+            let pick = terrain.hash01(x, z, 103);
+            if h >= 3 {
+                plant_spruce(world, terrain, x, z, 5 + (pick * 2.0) as i32);
+            } else if pick < 0.55 {
+                plant_round_tree(world, terrain, x, z, 4, LOG, LEAVES);
+            } else {
+                plant_round_tree(world, terrain, x, z, 5, BIRCH_LOG, BIRCH_LEAVES);
+            }
+            planted.push((x, z));
+        }
     }
+    planted.len()
+}
+
+/// `true` si en la columna (x, z) cabe un arbol sin estorbar.
+fn tree_fits(terrain: &Terrain, x: i32, z: i32) -> bool {
+    // 4 de distancia a lo construido: con menos, desde algun angulo de la
+    // orbita la copa tapa el estanque o la lava.
+    if !inside_island_margin(x, z, 1) || pad_distance(x, z) < 4 {
+        return false;
+    }
+    let h = terrain_top(terrain, x, z);
+    [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        .iter()
+        .all(|(dx, dz)| (terrain_top(terrain, x + dx, z + dz) - h).abs() <= 1)
 }
 
 /// Arbol de copa redonda (roble o abedul): copa de hojas sin las esquinas,
 /// para que la silueta no se vea cuadrada.
 fn plant_round_tree(
     world: &mut VoxelWorld,
+    terrain: &Terrain,
     x: i32,
     z: i32,
     trunk: i32,
     log: MaterialId,
     leaves: MaterialId,
 ) {
-    let base = terrain_top(x, z) + 1;
+    let base = terrain_top(terrain, x, z) + 1;
 
     for y in base..base + trunk {
         world.set(x, y, z, log);
@@ -958,8 +1035,8 @@ fn plant_round_tree(
 
 /// Pino: tronco alto y copa en capas que se van cerrando hacia la punta, como
 /// los de la taiga de Minecraft.
-fn plant_spruce(world: &mut VoxelWorld, x: i32, z: i32, height: i32) {
-    let base = terrain_top(x, z) + 1;
+fn plant_spruce(world: &mut VoxelWorld, terrain: &Terrain, x: i32, z: i32, height: i32) {
+    let base = terrain_top(terrain, x, z) + 1;
     let top = base + height;
 
     for y in base..top {
@@ -1071,4 +1148,38 @@ fn build_lights(lamparas: &[(i32, i32, i32)]) -> Vec<Light> {
     ));
 
     lights
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// La zona libre mide al menos 16x16, cae entera dentro de la isla y no la
+    /// toca ninguna zona aplanada: todas sus alturas salen del ruido.
+    #[test]
+    fn wild_zone_is_procedural() {
+        assert!(WILD_X.1 - WILD_X.0 + 1 >= 16);
+        assert!(WILD_Z.1 - WILD_Z.0 + 1 >= 16);
+        for x in WILD_X.0..=WILD_X.1 {
+            for z in WILD_Z.0..=WILD_Z.1 {
+                assert!(inside_island(x, z), "({x}, {z}) queda fuera de la isla");
+                assert!(pad_distance(x, z) > 0, "({x}, {z}) esta aplanada");
+            }
+        }
+    }
+
+    /// La zona libre tiene relieve de verdad con la semilla por defecto: si el
+    /// ruido saliera plano ahi, la caracteristica no se veria.
+    #[test]
+    fn wild_zone_has_hills() {
+        let terrain = Terrain::new(DEFAULT_SEED);
+        let heights: Vec<i32> = (WILD_X.0..=WILD_X.1)
+            .flat_map(|x| (WILD_Z.0..=WILD_Z.1).map(move |z| (x, z)))
+            .map(|(x, z)| terrain_top(&terrain, x, z))
+            .collect();
+        let max = *heights.iter().max().unwrap();
+        let distinct = heights.iter().collect::<std::collections::HashSet<_>>().len();
+        assert!(max >= 4, "la colina mas alta mide {max}");
+        assert!(distinct >= 4, "solo hay {distinct} alturas distintas");
+    }
 }
