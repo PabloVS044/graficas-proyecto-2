@@ -91,10 +91,17 @@ fn offset_origin(point: &Vec3, normal: &Vec3, direction: &Vec3) -> Vec3 {
 // ---------------------------------------------------------------------------
 
 /// Color difuso del material en el punto de impacto: textura si tiene, color
-/// plano si no.
+/// plano si no. Las caras de arriba y abajo pueden tener su propia textura.
 #[inline]
 fn surface_color(scene: &Scene, material: &Material, hit: &Intersect) -> Vec3 {
-    match material.texture {
+    let texture = if hit.normal.y > 0.5 {
+        material.texture_top.or(material.texture)
+    } else if hit.normal.y < -0.5 {
+        material.texture_bottom.or(material.texture)
+    } else {
+        material.texture
+    };
+    match texture {
         Some(id) => scene.textures.sample(id, hit.u, hit.v),
         None => material.diffuse,
     }

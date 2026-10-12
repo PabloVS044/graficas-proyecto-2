@@ -122,6 +122,10 @@ pub const OBSIDIAN: MaterialId = 8;
 pub const GLASS: MaterialId = 9;
 pub const GLOWSTONE: MaterialId = 10;
 pub const SAND: MaterialId = 11;
+pub const BIRCH_LOG: MaterialId = 12;
+pub const BIRCH_LEAVES: MaterialId = 13;
+pub const SPRUCE_LOG: MaterialId = 14;
+pub const SPRUCE_LEAVES: MaterialId = 15;
 
 /// Los materiales del diorama.
 ///
@@ -144,6 +148,8 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let normal = |t: &mut TextureManager, n: &str| t.load_raw(&format!("assets/normals/{n}.png"));
 
     let t_grass = color(textures, "grass")?;
+    let t_grass_side = color(textures, "grass_side")?;
+    let t_dirt = color(textures, "dirt")?;
     let t_stone = color(textures, "stone")?;
     let t_cobble = color(textures, "cobblestone")?;
     let t_planks = color(textures, "planks")?;
@@ -155,6 +161,10 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let t_glass = color(textures, "glass")?;
     let t_sand = color(textures, "sand")?;
     let t_glowstone = color(textures, "glowstone")?;
+    let t_birch_log = color(textures, "birch_log")?;
+    let t_birch_leaves = color(textures, "birch_leaves")?;
+    let t_spruce_log = color(textures, "spruce_log")?;
+    let t_spruce_leaves = color(textures, "spruce_leaves")?;
 
     let n_stone = normal(textures, "stone")?;
     let n_cobble = normal(textures, "cobblestone")?;
@@ -162,6 +172,8 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let n_lava = normal(textures, "lava")?;
     let n_sand = normal(textures, "sand")?;
     let n_log = normal(textures, "log")?;
+    let n_birch_log = normal(textures, "birch_log")?;
+    let n_spruce_log = normal(textures, "spruce_log")?;
 
     Ok(vec![
         Material {
@@ -169,7 +181,9 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             albedo: [0.95, 0.02, 0.00, 0.00],
             specular: 3.0,
             diffuse: Vec3::new(0.29, 0.52, 0.20),
-            texture: Some(t_grass),
+            texture: Some(t_grass_side),
+            texture_top: Some(t_grass),
+            texture_bottom: Some(t_dirt),
             ..Default::default()
         },
         Material {
@@ -297,6 +311,40 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             normal_map: Some(n_sand),
             ..Default::default()
         },
+        Material {
+            name: "abedul",
+            albedo: [0.90, 0.06, 0.00, 0.00],
+            specular: 8.0,
+            diffuse: Vec3::new(0.85, 0.83, 0.78),
+            texture: Some(t_birch_log),
+            normal_map: Some(n_birch_log),
+            ..Default::default()
+        },
+        Material {
+            name: "hojas abedul",
+            albedo: [0.85, 0.04, 0.00, 0.00],
+            specular: 4.0,
+            diffuse: Vec3::new(0.30, 0.48, 0.20),
+            texture: Some(t_birch_leaves),
+            ..Default::default()
+        },
+        Material {
+            name: "pino",
+            albedo: [0.90, 0.06, 0.00, 0.00],
+            specular: 8.0,
+            diffuse: Vec3::new(0.25, 0.16, 0.09),
+            texture: Some(t_spruce_log),
+            normal_map: Some(n_spruce_log),
+            ..Default::default()
+        },
+        Material {
+            name: "hojas pino",
+            albedo: [0.85, 0.04, 0.00, 0.00],
+            specular: 4.0,
+            diffuse: Vec3::new(0.12, 0.25, 0.12),
+            texture: Some(t_spruce_leaves),
+            ..Default::default()
+        },
     ])
 }
 
@@ -308,15 +356,15 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
 /// (`|x/a|^3 + |z/b|^3 <= 1`): tiene las esquinas redondeadas, que se ve mucho
 /// mas natural que un bloque cuadrado, sin necesidad de dibujar el contorno a
 /// mano.
-const ISLAND_RX: f32 = 12.0;
-const ISLAND_RZ: f32 = 10.0;
+const ISLAND_RX: f32 = 16.0;
+const ISLAND_RZ: f32 = 13.0;
 
 /// Profundidad a la que llega la roca de la isla.
 const BEDROCK_Y: i32 = -5;
 
 // Caja de la cabaña (extremos incluidos).
 const CABIN_X: (i32, i32) = (-7, -1);
-const CABIN_Z: (i32, i32) = (-7, -2);
+const CABIN_Z: (i32, i32) = (-9, -4);
 
 // Estanque, franja de obsidiana y lago de lava.
 //
@@ -324,12 +372,15 @@ const CABIN_Z: (i32, i32) = (-7, -2);
 // orbita, si estuvieran alineados en profundidad habria angulos desde los que
 // uno taparia completamente al otro. Asi los tres se ven juntos desde el frente
 // y desde los dos costados.
-const POND_X: (i32, i32) = (-6, 0);
-const POND_Z: (i32, i32) = (1, 6);
-const OBSIDIAN_X: (i32, i32) = (1, 2);
-const OBSIDIAN_Z: (i32, i32) = (1, 7);
-const LAVA_X: (i32, i32) = (3, 9);
-const LAVA_Z: (i32, i32) = (1, 6);
+const POND_X: (i32, i32) = (-9, -2);
+const POND_Z: (i32, i32) = (2, 8);
+const OBSIDIAN_X: (i32, i32) = (2, 3);
+const OBSIDIAN_Z: (i32, i32) = (2, 9);
+const LAVA_X: (i32, i32) = (5, 11);
+const LAVA_Z: (i32, i32) = (2, 7);
+
+/// Fila del andador de adoquin que corre a lo largo de la orilla.
+const WALK_Z: i32 = 0;
 
 #[inline]
 fn inside_island(x: i32, z: i32) -> bool {
@@ -368,7 +419,7 @@ fn is_flat_zone(x: i32, z: i32) -> bool {
         || in_box(x, z, (POND_X.0 - 1, POND_X.1 + 1), (POND_Z.0 - 1, POND_Z.1 + 1))
         || in_box(x, z, OBSIDIAN_X, OBSIDIAN_Z)
         || in_box(x, z, (LAVA_X.0 - 1, LAVA_X.1 + 1), (LAVA_Z.0 - 1, LAVA_Z.1 + 1))
-        || in_box(x, z, (-7, 2), (-1, 0))
+        || in_box(x, z, (POND_X.0 - 1, OBSIDIAN_X.1), (CABIN_Z.1 + 1, WALK_Z))
 }
 
 /// Ruido de valor escrito a mano (sin librerias): se hashean las esquinas de
@@ -435,6 +486,7 @@ pub fn build() -> Result<Scene, String> {
     build_path(&mut world);
     build_cabin(&mut world);
     build_pier(&mut world);
+    build_waterfall(&mut world);
     plant_trees(&mut world);
 
     let lamparas = glowstone_blocks();
@@ -534,15 +586,15 @@ fn carve_island(world: &mut VoxelWorld) {
 /// Rompe la silueta, que sin el es un disco plano, y le da al arbol de la
 /// izquierda un sitio elevado desde donde proyectar sombra sobre la cabaña.
 fn raise_outcrop(world: &mut VoxelWorld) {
-    for x in -12..=-7 {
-        for z in 2..=8 {
+    for x in -16..=-10 {
+        for z in 2..=10 {
             if !inside_island(x, z) {
                 continue;
             }
             // Altura en forma de loma: maxima en el centro del afloramiento y
             // bajando hacia los bordes.
-            let dx = (x + 10) as f32 / 3.0;
-            let dz = (z - 5) as f32 / 3.5;
+            let dx = (x + 13) as f32 / 3.0;
+            let dz = (z - 6) as f32 / 3.5;
             let bump = (1.0 - (dx * dx + dz * dz)).max(0.0);
             let top = (bump * 3.0).round() as i32;
             if top <= 0 {
@@ -660,13 +712,14 @@ fn carve_water_and_lava(world: &mut VoxelWorld) {
     // asi que reflejan la lava: franjas naranjas moviendose sobre cristal negro
     // conforme gira la camara. Narrativamente son lo que queda donde la lava
     // toco el agua.
+    let (ox, oz) = (OBSIDIAN_X.0, OBSIDIAN_Z.0);
     for (x, z, height) in [
-        (1, 1, 2),
-        (2, 3, 4),
-        (1, 5, 3),
-        (2, 7, 2),
-        (2, -1, 3),
-        (1, 8, 2),
+        (ox, oz, 2),
+        (ox + 1, oz + 2, 4),
+        (ox, oz + 4, 3),
+        (ox + 1, oz + 6, 2),
+        (ox + 1, oz - 3, 3),
+        (ox, oz + 7, 2),
     ] {
         if !inside_island(x, z) {
             continue;
@@ -683,14 +736,14 @@ fn build_path(world: &mut VoxelWorld) {
     // mismas que las de la puerta, para que el camino salga de ella y no de un
     // punto cualquiera de la fachada.
     let (x0, _) = CABIN_X;
-    for z in -1..=0 {
+    for z in (CABIN_Z.1 + 1)..=WALK_Z {
         world.set(x0 + 3, 0, z, COBBLE);
         world.set(x0 + 4, 0, z, COBBLE);
     }
     // Andador a lo largo de la orilla, de punta a punta, que conecta el
     // estanque con la franja de obsidiana.
-    for x in -7..=2 {
-        world.set(x, 0, 0, COBBLE);
+    for x in (POND_X.0 - 1)..=OBSIDIAN_X.1 {
+        world.set(x, 0, WALK_Z, COBBLE);
     }
 }
 
@@ -732,8 +785,8 @@ fn build_cabin(world: &mut VoxelWorld) {
         world.set(x0 + 1, y, z1, GLASS);
         world.set(x0 + 2, y, z1, GLASS);
         world.set(x0 + 5, y, z1, GLASS);
-        world.set(x0, y, -5, GLASS);
-        world.set(x0, y, -4, GLASS);
+        world.set(x0, y, z0 + 2, GLASS);
+        world.set(x0, y, z0 + 3, GLASS);
     }
 
     // Puerta: un hueco de dos bloques en la pared del frente.
@@ -745,7 +798,7 @@ fn build_cabin(world: &mut VoxelWorld) {
     // Lampara dentro de la cabaña. No se ve directamente, pero su luz sale por
     // la ventana: es lo que hace que el cristal se lea como cristal y no como
     // un agujero.
-    world.set(x0 + 2, 3, -5, GLOWSTONE);
+    world.set(x0 + 2, 3, z0 + 2, GLOWSTONE);
 
     // Ventana tambien en la pared de atras. No es simetria por simetria: el
     // diorama gira, y sin ella la cabaña vista desde atras es una losa lisa.
@@ -795,48 +848,146 @@ fn build_pier(world: &mut VoxelWorld) {
     // Al quedar al ras desaparecen los pilotes: la capa de debajo es la arena
     // del fondo, asi que quedarian enterrados y no se verian desde ningun
     // angulo.
-    for x in -4..=-3 {
-        for z in 1..=4 {
+    for x in -6..=-5 {
+        for z in POND_Z.0..=(POND_Z.0 + 4) {
             world.set(x, 0, z, PLANKS);
         }
     }
 }
 
 
-/// Arboles: tronco de cuatro bloques y copa de hojas sin las esquinas, para que
-/// la silueta no se vea cuadrada.
+/// Cascada: el estanque se desborda por un canal hacia el borde de la isla y
+/// el agua cae por el acantilado hasta perderse por debajo de la roca.
+///
+/// Sale por el frente de la isla, el lado al que mira la cabaña, para que se
+/// vea en la toma principal. La caida sigue mas alla del fondo de la isla:
+/// una isla flotante con agua que cae al vacio es la imagen que se busca, y
+/// cortarla a ras de la roca la haria ver como una mancha azul pegada a la
+/// pared.
+fn build_waterfall(world: &mut VoxelWorld) {
+    const CHANNEL_X: (i32, i32) = (-4, -3);
+
+    // Canal: del estanque a la orilla. Se limpia lo que haya encima por si el
+    // terreno ondula ahi, asi el agua pasa por una zanja en vez de enterrarse.
+    for x in CHANNEL_X.0..=CHANNEL_X.1 {
+        for z in (POND_Z.1 + 1)..=(ISLAND_RZ as i32) {
+            if !inside_island(x, z) {
+                continue;
+            }
+            for y in 1..=4 {
+                world.clear(x, y, z);
+            }
+            world.set(x, 0, z, WATER);
+            world.set(x, -1, z, SAND);
+        }
+    }
+
+    // Caida: la columna justo afuera del borde, pegada al acantilado. Las dos
+    // columnas terminan a distinta altura para que el final no sea un corte
+    // recto.
+    for (x, bottom) in [(CHANNEL_X.0, BEDROCK_Y - 5), (CHANNEL_X.1, BEDROCK_Y - 4)] {
+        let mut z = POND_Z.1 + 1;
+        while inside_island(x, z) {
+            z += 1;
+        }
+        for y in bottom..=0 {
+            world.set(x, y, z, WATER);
+        }
+    }
+}
+
+/// Arboles: robles, abedules y pinos.
 ///
 /// Las posiciones importan: esta funcion corre despues de levantar la cabaña y
 /// los bloques se sobrescriben, asi que una copa que alcance el tejado se lo
 /// come. El arbol de la izquierda se planta sobre el afloramiento rocoso, que
 /// ademas lo aleja de la cabaña y le da altura para proyectar sombra sobre ella.
 fn plant_trees(world: &mut VoxelWorld) {
-    for (x, z) in [(-11, 5), (10, -4), (-4, 9)] {
-        let base = terrain_top(x, z) + 1;
+    // Robles. El que estaba al frente, en (-4, 9), se movio al borde derecho:
+    // ocupaba justo el sitio por donde sale la cascada, y delante del lago de
+    // lava tapaba las columnas de obsidiana y su reflejo.
+    for (x, z) in [(-14, 6), (13, -3), (14, 5), (-12, -10)] {
+        plant_round_tree(world, x, z, 4, LOG, LEAVES);
+    }
 
-        for y in base..base + 4 {
-            world.set(x, y, z, LOG);
-        }
+    // Abedules: mas altos y claros que los robles. La corteza blanca destaca
+    // contra el pasto y rompe la paleta de cafes del resto de la madera.
+    for (x, z) in [(7, -4), (-13, -5), (-12, 10)] {
+        plant_round_tree(world, x, z, 5, BIRCH_LOG, BIRCH_LEAVES);
+    }
 
-        let crown = base + 3;
-        for dy in 0..3 {
-            let radius: i32 = if dy == 2 { 1 } else { 2 };
-            for dx in -radius..=radius {
-                for dz in -radius..=radius {
-                    // Se recortan las esquinas del cubo de hojas.
-                    if dx.abs() == radius && dz.abs() == radius {
-                        continue;
-                    }
-                    // No tapar el tronco con hojas en su propia columna.
-                    if dx == 0 && dz == 0 && dy < 2 {
-                        continue;
-                    }
-                    world.set(x + dx, crown + dy, z + dz, LEAVES);
+    // Pinos al fondo: oscuros y en punta, le dan a la silueta de la isla una
+    // altura que los arboles redondos no tienen.
+    for (x, z, height) in [(3, -11, 6), (8, -10, 5), (12, -9, 6)] {
+        plant_spruce(world, x, z, height);
+    }
+}
+
+/// Arbol de copa redonda (roble o abedul): copa de hojas sin las esquinas,
+/// para que la silueta no se vea cuadrada.
+fn plant_round_tree(
+    world: &mut VoxelWorld,
+    x: i32,
+    z: i32,
+    trunk: i32,
+    log: MaterialId,
+    leaves: MaterialId,
+) {
+    let base = terrain_top(x, z) + 1;
+
+    for y in base..base + trunk {
+        world.set(x, y, z, log);
+    }
+
+    let crown = base + trunk - 1;
+    for dy in 0..3 {
+        let radius: i32 = if dy == 2 { 1 } else { 2 };
+        for dx in -radius..=radius {
+            for dz in -radius..=radius {
+                // Se recortan las esquinas del cubo de hojas.
+                if dx.abs() == radius && dz.abs() == radius {
+                    continue;
                 }
+                // No tapar el tronco con hojas en su propia columna.
+                if dx == 0 && dz == 0 && dy < 2 {
+                    continue;
+                }
+                world.set(x + dx, crown + dy, z + dz, leaves);
             }
         }
-        world.set(x, crown + 3, z, LEAVES);
     }
+    world.set(x, crown + 3, z, leaves);
+}
+
+/// Pino: tronco alto y copa en capas que se van cerrando hacia la punta, como
+/// los de la taiga de Minecraft.
+fn plant_spruce(world: &mut VoxelWorld, x: i32, z: i32, height: i32) {
+    let base = terrain_top(x, z) + 1;
+    let top = base + height;
+
+    for y in base..top {
+        world.set(x, y, z, SPRUCE_LOG);
+    }
+
+    // Capas de abajo hacia arriba, alternando anchas y angostas para que se
+    // vean los escalones de la copa.
+    let layers: [i32; 6] = [2, 1, 2, 1, 1, 0];
+    let first = top - layers.len() as i32 + 1;
+    for (i, &radius) in layers.iter().enumerate() {
+        let y = first + i as i32;
+        for dx in -radius..=radius {
+            for dz in -radius..=radius {
+                if radius > 1 && dx.abs() == radius && dz.abs() == radius {
+                    continue;
+                }
+                if dx == 0 && dz == 0 && y < top {
+                    continue;
+                }
+                world.set(x + dx, y, z + dz, SPRUCE_LEAVES);
+            }
+        }
+    }
+    world.set(x, top + 1, z, SPRUCE_LEAVES);
 }
 
 /// Celdas donde va un bloque de piedra luminosa.
@@ -849,8 +1000,8 @@ fn plant_trees(world: &mut VoxelWorld) {
 fn glowstone_blocks() -> Vec<(i32, i32, i32)> {
     vec![
         // A los lados de la puerta, apoyadas en el suelo.
-        (CABIN_X.0 + 2, 1, -1),
-        (CABIN_X.0 + 5, 1, -1),
+        (CABIN_X.0 + 2, 1, CABIN_Z.1 + 1),
+        (CABIN_X.0 + 5, 1, CABIN_Z.1 + 1),
     ]
 }
 
@@ -891,7 +1042,8 @@ fn build_lights(lamparas: &[(i32, i32, i32)]) -> Vec<Light> {
 
     // Tres focos sobre el lago de lava.
     let lava_centre_z = (LAVA_Z.0 + LAVA_Z.1) as f32 * 0.5;
-    for (i, x) in [2.0f32, 4.5, 6.5].iter().enumerate() {
+    let lava_x = LAVA_X.0 as f32;
+    for (i, x) in [lava_x - 1.0, lava_x + 1.5, lava_x + 3.5].iter().enumerate() {
         let z = lava_centre_z + (i as f32 - 1.0) * 1.8;
         lights.push(Light::new(
             Vec3::new(*x, 1.6, z),
@@ -912,7 +1064,11 @@ fn build_lights(lamparas: &[(i32, i32, i32)]) -> Vec<Light> {
 
     // La lampara de dentro de la cabaña, la que sale por la ventana.
     lights.push(Light::new(
-        Vec3::new(-6.5, 3.6, -4.5),
+        Vec3::new(
+            CABIN_X.0 as f32 + 0.5,
+            3.6,
+            CABIN_Z.0 as f32 + 2.5,
+        ),
         Vec3::new(1.00, 0.70, 0.38),
         9.0,
     ));

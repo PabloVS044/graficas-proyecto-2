@@ -77,6 +77,12 @@ impl VoxelWorld {
         };
 
         let hidden = |x: i32, y: i32, z: i32| {
+            // Un bloque por debajo del suelo solo puede estar ahi a proposito,
+            // colgando de la isla (la cascada). La regla de "debajo todo es
+            // roca" lo daria por enterrado, asi que esos nunca se descartan.
+            if y < self.floor_y {
+                return false;
+            }
             const NEIGHBOURS: [(i32, i32, i32); 6] = [
                 (1, 0, 0),
                 (-1, 0, 0),

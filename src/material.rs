@@ -44,8 +44,18 @@ pub struct Material {
     /// Color base cuando el material no tiene textura.
     pub diffuse: Vec3,
 
-    /// Textura de color. Si es `None` se usa `diffuse`.
+    /// Textura de color de los **costados**. Si es `None` se usa `diffuse`.
     pub texture: Option<TextureId>,
+
+    /// Textura de la cara de arriba. Si es `None` se usa la de los costados.
+    ///
+    /// Existe porque un bloque de pasto no se ve igual por todos lados: hierba
+    /// arriba, tierra abajo y tierra con una franja de hierba en los costados.
+    /// Con una sola textura los acantilados se ven como una alfombra verde.
+    pub texture_top: Option<TextureId>,
+
+    /// Textura de la cara de abajo. Si es `None` se usa la de los costados.
+    pub texture_bottom: Option<TextureId>,
 
     /// Mapa de normales en espacio tangente. Perturba la normal de la cara
     /// plana del cubo para simular relieve sin agregar geometria.
@@ -67,6 +77,8 @@ impl Default for Material {
             emission: Vec3::zeros(),
             diffuse: Vec3::new(0.8, 0.8, 0.8),
             texture: None,
+            texture_top: None,
+            texture_bottom: None,
             normal_map: None,
             emission_map: None,
         }

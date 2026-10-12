@@ -82,7 +82,7 @@ fn main() {
             env("CAM_FY", scene.focus.y),
             env("CAM_FZ", scene.focus.z),
         );
-        let mut camera = Camera::new(focus, env("CAM_DIST", 30.0));
+        let mut camera = Camera::new(focus, env("CAM_DIST", 39.0));
         camera.yaw = env("CAM_YAW", camera.yaw);
         camera.pitch = env("CAM_PITCH", camera.pitch);
         let frame = CameraFrame::new(&camera, fb.width, fb.height);
@@ -122,7 +122,7 @@ fn main() {
         })
         .collect();
 
-    let mut camera = Camera::new(scene.focus, 30.0);
+    let mut camera = Camera::new(scene.focus, 39.0);
     let mut show_hud = true;
 
     // Nivel que se va a dibujar este frame. Empieza en el mas burdo y sube
@@ -302,8 +302,8 @@ fn render_orbit(scene: &scene::Scene, threads: usize) {
     let width = env_num("ORBIT_WIDTH", WINDOW_WIDTH as f32) as usize;
     let height = env_num("ORBIT_HEIGHT", WINDOW_HEIGHT as f32) as usize;
     let samples = env_num("ORBIT_SAMPLES", 2.0) as u32;
-    let near = env_num("ORBIT_NEAR", 17.0);
-    let far = env_num("ORBIT_FAR", 33.0);
+    let near = env_num("ORBIT_NEAR", 22.0);
+    let far = env_num("ORBIT_FAR", 43.0);
 
     if let Err(err) = std::fs::create_dir_all("frames") {
         eprintln!("no se pudo crear el directorio frames/: {err}");
