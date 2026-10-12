@@ -15,7 +15,7 @@
 
 ## Video
 
-<!-- TODO: enlace al video de la entrega -->
+<!-- TODO: enlace al video -->
 
 ---
 
@@ -43,27 +43,30 @@ primero, calcula cuanta luz le llega a ese punto y, si el material lo pide,
 genera rayos nuevos que se reflejan o atraviesan el material. El color que
 regresa es el del pixel.
 
-## Puntos de la rubrica
-
-Donde se ve cada caracteristica en la escena, y donde esta en el codigo.
-
-| Caracteristica | Donde se ve | Codigo |
-|---|---|---|
-| Rotacion y zoom | Orbita con teclado y rueda; el video gira y se acerca | `camera.rs`, `main.rs` |
-| Materiales (20) | Cada tipo de bloque tiene su textura y sus parametros (tabla abajo) | `scene.rs::build_materials` |
-| Refraccion | El agua (IOR 1.33) deforma el fondo de arena del estanque y deja ver la roca detras de la cascada; las ventanas de cristal (1.50) | `render.rs::refract` |
-| Reflexion | Las columnas de obsidiana reflejan la lava; el agua refleja el cielo y las nubes | `render.rs::cast_ray` |
-| Mapas normales | Piedra, adoquin, tablones, troncos, minerales, lava y arena; se nota con la luz rasante del atardecer | `render.rs::shading_normal` |
-| Emisivos | La lava y la piedra luminosa brillan solas y ademas alumbran lo que tienen cerca | `render.rs::surface_emission` |
-| Skybox | Cielo de atardecer con sol, nubes de bloques arriba y un mar de nubes abajo; tambien aparece en los reflejos | `skybox.rs` |
-| Terreno procedural | Toda la isla (41x33) sale de ruido fractal; atras a la derecha queda una zona de 16x16 sin nada construido donde el relieve es puro ruido | `terrain.rs`, `scene.rs::terrain_top` |
-| Paralelismo y optimizacion | Hilos con cola de trabajo, rejilla uniforme, descarte de bloques enterrados, refinamiento progresivo | `render.rs::render`, `accel.rs`, `voxel.rs` |
-
 ## Como se corre
 
+### Antes de compilar
+
+- **Rust 1.85 o mas reciente** (el proyecto usa la edicion 2024): <https://rustup.rs>
+- **CMake y un compilador de C**: el crate `raylib` compila raylib desde su
+  codigo fuente la primera vez.
+  - Windows: CMake y las herramientas de compilacion de Visual Studio (C++).
+  - macOS: `xcode-select --install` y `brew install cmake`.
+  - Linux (Fedora): `sudo dnf install cmake gcc-c++ libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel`
+  - Linux (Ubuntu/Debian): `sudo apt install cmake build-essential libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev`
+
+### Correr
+
 ```bash
-cargo run --release
+git clone https://github.com/PabloVS044/graficas-proy2.git
+cd graficas-proy2
+cargo run
 ```
+
+Hay que correrlo **desde la raiz del repositorio**: las texturas se cargan con
+rutas relativas (`assets/...`). La primera compilacion tarda un poco mas porque
+compila raylib. El perfil normal ya compila con optimizaciones, asi que no hace
+falta `--release`.
 
 | Tecla | Que hace |
 |-------|----------|
@@ -71,29 +74,19 @@ cargo run --release
 | ↑ ↓ | Subir y bajar el angulo de la camara |
 | W S / rueda | Acercar y alejar |
 | Q E | Bajar y subir el punto de vista |
-| T | Animar el agua y la lava (apagado por defecto: con la animacion encendida la imagen no llega a refinarse) |
-| P | Guardar `captura.png` al doble de resolucion |
+| T | Pausar o reanudar la animacion del agua y la lava (encendida por defecto; en pausa, la imagen quieta se refina hasta 2x2 muestras) |
 | H | Mostrar u ocultar el HUD |
 
-Dos modos mas, sin ventana:
+Para el video hay un modo sin ventana que traza una vuelta completa como
+secuencia de cuadros:
 
 ```bash
-# Un solo cuadro a PNG
-cargo run --release -- --snapshot
-
-# Una vuelta completa como secuencia de cuadros, para el video
-cargo run --release -- --orbit
+cargo run -- --orbit
 ffmpeg -framerate 30 -i frames/%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 diorama.mp4
 ```
 
-Variables de entorno utiles:
-
-| Variable | Efecto |
-|---|---|
-| `SEED=5` | Otra semilla: otras colinas, otros arboles, otros minerales |
-| `TIME=2.5` | Instante de la animacion de los liquidos en `--snapshot` |
-| `CAM_YAW`, `CAM_PITCH`, `CAM_DIST` | Posicion de la camara en `--snapshot` |
-| `SNAP_W`, `SNAP_H`, `SNAP_SAMPLES`, `SNAP_OUT` | Tamaño, muestras y archivo de `--snapshot` |
+Con `SEED=<numero> cargo run` se genera otra isla: otras colinas, otros arboles
+y otros minerales.
 
 ## La escena
 
@@ -212,10 +205,10 @@ ella. Se descartan las que quedan en pendiente, junto a lo construido o en la
 orilla, y se exige una separacion minima entre troncos. El tipo depende de la
 altura, como los biomas: pinos en las cimas, robles y abedules en el llano.
 
-**La zona de 16x16.** Toda la isla sale del ruido, pero tiene zonas aplanadas
-encima. Para que quede un area de al menos 16x16 cubos de relieve puro, lo
+**La zona de colinas.** Toda la isla sale del ruido, pero tiene zonas aplanadas
+encima. Para que el relieve tenga un sitio donde lucirse sin nada encima, lo
 construido esta agrupado al frente y a la izquierda, y el cuadrante trasero
-derecho queda libre. La prueba `wild_zone_is_procedural` (`cargo test`)
+derecho (16x16) queda solo para el terreno. La prueba `wild_zone_is_procedural` (`cargo test`)
 comprueba que esa zona mida 16x16, caiga entera dentro de la isla y no la toque
 ninguna zona aplanada; `wild_zone_has_hills` comprueba que con la semilla por
 defecto tenga colinas de verdad. Al arrancar, el programa imprime la semilla, los
@@ -229,8 +222,8 @@ la composicion del video.
 **Liquidos animados.** El agua y la lava desplazan su textura con el tiempo, sin
 agregar geometria. El agua corre hacia el canal en la superficie del estanque y
 hacia abajo en la cascada; la lava se arrastra mucho mas lento. En el video el
-tiempo avanza a la velocidad real (30 cuadros por segundo); en la ventana se
-prende con `T`.
+tiempo avanza a la velocidad real (30 cuadros por segundo); en la ventana esta
+encendida desde el inicio y se pausa con `T`.
 
 **Niebla.** A partir de cierta distancia el color se funde con el del cielo que
 hay detras. Es ligera a proposito: solo separa lo cercano de lo lejano, y sin

@@ -32,6 +32,11 @@ const WINDOW_HEIGHT: i32 = 640;
 /// software interactivo: nunca se espera la imagen buena para poder moverse.
 const QUALITY_LEVELS: &[(i32, u32)] = &[(8, 1), (4, 1), (2, 1), (1, 1), (1, 2)];
 
+/// Nivel tope mientras los liquidos se animan: resolucion completa con una
+/// muestra (~30 ms por cuadro). El ultimo nivel, con 2x2 muestras, tarda unos
+/// 110 ms y la animacion se veria a tirones.
+const ANIMATION_LEVEL: usize = 3;
+
 /// Velocidades de los controles de camara.
 const ORBIT_SPEED: f32 = 1.4; // radianes por segundo
 const ZOOM_SPEED: f32 = 1.9; // factor por segundo
@@ -66,41 +71,6 @@ fn main() {
         return;
     }
 
-    // Modo sin ventana: traza un solo cuadro a PNG y sale. Sirve para probar
-    // el motor sin entorno grafico y para generar los cuadros del video.
-    if std::env::args().any(|a| a == "--snapshot") {
-        let env = |name: &str, fallback: f32| {
-            std::env::var(name)
-                .ok()
-                .and_then(|v| v.parse::<f32>().ok())
-                .unwrap_or(fallback)
-        };
-        let mut fb = Framebuffer::new(
-            env("SNAP_W", WINDOW_WIDTH as f32) as usize,
-            env("SNAP_H", WINDOW_HEIGHT as f32) as usize,
-        );
-        let focus = crate::vector::Vec3::new(
-            env("CAM_FX", scene.focus.x),
-            env("CAM_FY", scene.focus.y),
-            env("CAM_FZ", scene.focus.z),
-        );
-        scene.time = env("TIME", 0.0);
-        let mut camera = Camera::new(focus, env("CAM_DIST", 48.0));
-        camera.yaw = env("CAM_YAW", camera.yaw);
-        camera.pitch = env("CAM_PITCH", camera.pitch);
-        let frame = CameraFrame::new(&camera, fb.width, fb.height);
-        let started = std::time::Instant::now();
-        render::render(&mut fb, &scene, &frame, env("SNAP_SAMPLES", 2.0) as u32, threads);
-        println!("trazado en {:.2?} con {threads} hilos", started.elapsed());
-        let out = std::env::var("SNAP_OUT").unwrap_or_else(|_| "snapshot.png".to_string());
-        if let Err(err) = fb.save_png(&out) {
-            eprintln!("{err}");
-            std::process::exit(1);
-        }
-        println!("guardado en {out}");
-        return;
-    }
-
     let (mut rl, thread) = raylib::init()
         .size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .title("Diorama raytracing - proyecto 2")
@@ -127,10 +97,11 @@ fn main() {
 
     let mut camera = Camera::new(scene.focus, 48.0);
     let mut show_hud = true;
-    // Animacion de los liquidos. Apagada por defecto: con ella encendida cada
-    // cuadro es distinto y el refinamiento progresivo no llega nunca a la
-    // calidad maxima.
-    let mut animate = false;
+    // Animacion de los liquidos. Encendida por defecto. Mientras anima, cada
+    // cuadro es distinto y la imagen se queda en `ANIMATION_LEVEL` en vez de
+    // refinarse hasta la calidad maxima; con T se apaga y la imagen quieta
+    // sube hasta 2x2 muestras.
+    let mut animate = true;
 
     // Nivel que se va a dibujar este frame. Empieza en el mas burdo y sube
     // mientras nadie toque la camara.
@@ -140,10 +111,9 @@ fn main() {
     // `true` mientras quede calidad por ganar. Se apaga al llegar al ultimo
     // nivel y se vuelve a encender en cuanto la camara se mueve.
     let mut refining = true;
-    let mut last_ms = 0.0f64;
 
     println!("hilos de render: {threads}");
-    println!("controles: flechas/AD = rotar | W,S o rueda = zoom | Q,E = subir/bajar | P = captura PNG | H = HUD | T = animar liquidos");
+    println!("controles: flechas/AD = rotar | W,S o rueda = zoom | Q,E = subir/bajar | T = pausar animacion | H = HUD");
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -198,12 +168,18 @@ fn main() {
         }
 
         // --- Decidir que nivel trazar --------------------------------------
-        if camera.dirty || animate {
+        if camera.dirty {
             // La camara se movio: se tira el refinamiento y se vuelve al nivel
             // rapido.
             camera.dirty = false;
             level = 0;
             refining = true;
+        }
+        if animate {
+            // Cada cuadro es distinto, asi que hay que seguir trazando aunque
+            // la camara este quieta, pero sin pasar del nivel de animacion.
+            refining = true;
+            level = level.min(ANIMATION_LEVEL);
         }
 
         // Solo se traza cuando hay algo nuevo que trazar. Sin esta condicion el
@@ -215,7 +191,6 @@ fn main() {
             let frame =
                 CameraFrame::new(&camera, target.framebuffer.width, target.framebuffer.height);
 
-            let started = std::time::Instant::now();
             render::render(
                 &mut target.framebuffer,
                 &scene,
@@ -223,7 +198,6 @@ fn main() {
                 target.samples,
                 threads,
             );
-            last_ms = started.elapsed().as_secs_f64() * 1000.0;
 
             target
                 .texture
@@ -233,39 +207,16 @@ fn main() {
             ready_level = level;
             // El siguiente cuadro sube un escalon de calidad, hasta llegar al
             // ultimo, donde el refinamiento se detiene.
-            if level + 1 < targets.len() {
+            let top = if animate { ANIMATION_LEVEL } else { targets.len() - 1 };
+            if level < top {
                 level += 1;
-            } else {
+            } else if !animate {
                 refining = false;
-            }
-        }
-
-        // --- Captura en alta resolucion ------------------------------------
-        if rl.is_key_pressed(KeyboardKey::KEY_P) {
-            let path = "captura.png";
-            let mut hires =
-                Framebuffer::new((WINDOW_WIDTH * 2) as usize, (WINDOW_HEIGHT * 2) as usize);
-            let hires_frame = CameraFrame::new(&camera, hires.width, hires.height);
-            render::render(&mut hires, &scene, &hires_frame, 3, threads);
-            match hires.save_png(path) {
-                Ok(()) => println!("captura guardada en {path}"),
-                Err(err) => eprintln!("{err}"),
             }
         }
 
         // --- Dibujar -------------------------------------------------------
         let shown = &targets[ready_level];
-        let hud = format!(
-            "{}x{}  x{} muestras{}  |  {:.1} ms  |  {} hilos  |  {} cubos",
-            shown.framebuffer.width,
-            shown.framebuffer.height,
-            shown.samples,
-            if refining { "  (refinando)" } else { "" },
-            last_ms,
-            threads,
-            scene.cubes.len()
-        );
-
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
         d.draw_texture_ex(
@@ -277,12 +228,11 @@ fn main() {
         );
 
         if show_hud {
-            d.draw_rectangle(0, 0, WINDOW_WIDTH, 52, Color::new(0, 0, 0, 150));
-            d.draw_text(&hud, 12, 10, 18, Color::RAYWHITE);
+            d.draw_rectangle(0, 0, WINDOW_WIDTH, 30, Color::new(0, 0, 0, 150));
             d.draw_text(
-                "flechas/AD rotar   W/S zoom   Q/E altura   P captura   H HUD",
+                "flechas/AD rotar   W/S zoom   Q/E altura   T pausar animacion   H HUD",
                 12,
-                32,
+                8,
                 14,
                 Color::LIGHTGRAY,
             );

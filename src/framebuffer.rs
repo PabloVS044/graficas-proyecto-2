@@ -32,8 +32,7 @@ impl Framebuffer {
         self.width * 4
     }
 
-    /// Guarda el buffer como PNG. Se usa para la captura en alta resolucion
-    /// que alimenta el video de la entrega.
+    /// Guarda el buffer como PNG. Lo usan los cuadros de `--orbit`.
     pub fn save_png(&self, path: &str) -> Result<(), String> {
         use raylib::prelude::*;
 
