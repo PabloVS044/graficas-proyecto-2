@@ -46,7 +46,7 @@ struct RenderTarget {
 }
 
 fn main() {
-    let scene = match scene::build() {
+    let mut scene = match scene::build() {
         Ok(scene) => scene,
         Err(err) => {
             eprintln!("error al construir la escena: {err}");
@@ -62,7 +62,7 @@ fn main() {
 
     // Modo sin ventana: traza una orbita completa a una secuencia de PNG.
     if std::env::args().any(|a| a == "--orbit") {
-        render_orbit(&scene, threads);
+        render_orbit(&mut scene, threads);
         return;
     }
 
@@ -84,6 +84,7 @@ fn main() {
             env("CAM_FY", scene.focus.y),
             env("CAM_FZ", scene.focus.z),
         );
+        scene.time = env("TIME", 0.0);
         let mut camera = Camera::new(focus, env("CAM_DIST", 48.0));
         camera.yaw = env("CAM_YAW", camera.yaw);
         camera.pitch = env("CAM_PITCH", camera.pitch);
@@ -126,6 +127,10 @@ fn main() {
 
     let mut camera = Camera::new(scene.focus, 48.0);
     let mut show_hud = true;
+    // Animacion de los liquidos. Apagada por defecto: con ella encendida cada
+    // cuadro es distinto y el refinamiento progresivo no llega nunca a la
+    // calidad maxima.
+    let mut animate = false;
 
     // Nivel que se va a dibujar este frame. Empieza en el mas burdo y sube
     // mientras nadie toque la camara.
@@ -138,7 +143,7 @@ fn main() {
     let mut last_ms = 0.0f64;
 
     println!("hilos de render: {threads}");
-    println!("controles: flechas/AD = rotar | W,S o rueda = zoom | Q,E = subir/bajar | P = captura PNG | H = HUD");
+    println!("controles: flechas/AD = rotar | W,S o rueda = zoom | Q,E = subir/bajar | P = captura PNG | H = HUD | T = animar liquidos");
 
     while !rl.window_should_close() {
         let dt = rl.get_frame_time();
@@ -162,6 +167,12 @@ fn main() {
 
         if rl.is_key_pressed(KeyboardKey::KEY_H) {
             show_hud = !show_hud;
+        }
+        if rl.is_key_pressed(KeyboardKey::KEY_T) {
+            animate = !animate;
+        }
+        if animate {
+            scene.time += dt;
         }
 
         camera.orbit(d_yaw, d_pitch);
@@ -187,7 +198,7 @@ fn main() {
         }
 
         // --- Decidir que nivel trazar --------------------------------------
-        if camera.dirty {
+        if camera.dirty || animate {
             // La camara se movio: se tira el refinamiento y se vuelve al nivel
             // rapido.
             camera.dirty = false;
@@ -290,7 +301,7 @@ fn main() {
 /// La trayectoria combina los dos movimientos: una vuelta entera de rotacion y
 /// dos ciclos de acercamiento y alejamiento, desfasados respecto a la rotacion
 /// para que se vean como movimientos separados y no como uno solo.
-fn render_orbit(scene: &scene::Scene, threads: usize) {
+fn render_orbit(scene: &mut scene::Scene, threads: usize) {
     use std::f32::consts::TAU;
 
     let env_num = |name: &str, fallback: f32| {
@@ -329,6 +340,9 @@ fn render_orbit(scene: &scene::Scene, threads: usize) {
         // La altura tambien se mueve, desfasada un cuarto de ciclo, para que la
         // camara no describa un circulo plano.
         camera.pitch = 0.42 + 0.24 * (TAU * t).sin();
+        // El video va a 30 cuadros por segundo: asi el agua y la lava se
+        // mueven a la velocidad real con la que se van a ver.
+        scene.time = index as f32 / 30.0;
 
         let frame = CameraFrame::new(&camera, width, height);
         render::render(&mut framebuffer, scene, &frame, samples, threads);

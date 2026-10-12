@@ -30,6 +30,9 @@ pub struct Scene {
     /// Punto alrededor del cual conviene orbitar la camara.
     pub focus: Vec3,
 
+    /// Segundos transcurridos. Mueve las texturas de los liquidos.
+    pub time: f32,
+
     /// Rejilla de aceleracion. Se construye una vez a partir de `cubes` y es lo
     /// que evita probar el rayo contra la escena entera.
     pub grid: Grid,
@@ -112,6 +115,9 @@ pub const BIRCH_LEAVES: MaterialId = 13;
 pub const SPRUCE_LOG: MaterialId = 14;
 pub const SPRUCE_LEAVES: MaterialId = 15;
 pub const DIRT: MaterialId = 16;
+pub const COAL_ORE: MaterialId = 17;
+pub const IRON_ORE: MaterialId = 18;
+pub const DIAMOND_ORE: MaterialId = 19;
 
 /// Los materiales del diorama.
 ///
@@ -160,6 +166,12 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
     let n_log = normal(textures, "log")?;
     let n_birch_log = normal(textures, "birch_log")?;
     let n_spruce_log = normal(textures, "spruce_log")?;
+    let t_coal = color(textures, "coal_ore")?;
+    let t_iron = color(textures, "iron_ore")?;
+    let t_diamond = color(textures, "diamond_ore")?;
+    let n_coal = normal(textures, "coal_ore")?;
+    let n_iron = normal(textures, "iron_ore")?;
+    let n_diamond = normal(textures, "diamond_ore")?;
 
     Ok(vec![
         Material {
@@ -229,6 +241,10 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             refractive_index: 1.33,
             diffuse: Vec3::new(0.55, 0.78, 0.88),
             texture: Some(t_water),
+            // Corre hacia +v: en la superficie del estanque va hacia el canal
+            // de la cascada, y en las caras verticales de la cascada, hacia
+            // abajo.
+            uv_scroll: [0.0, 0.6],
             ..Default::default()
         },
         Material {
@@ -247,6 +263,8 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             texture: Some(t_lava),
             normal_map: Some(n_lava),
             emission_map: Some(t_lava),
+            // Mucho mas lenta que el agua: la lava se arrastra.
+            uv_scroll: [0.03, 0.08],
             ..Default::default()
         },
         Material {
@@ -339,6 +357,36 @@ fn build_materials(textures: &mut TextureManager) -> Result<Vec<Material>, Strin
             specular: 2.0,
             diffuse: Vec3::new(0.40, 0.28, 0.18),
             texture: Some(t_dirt),
+            ..Default::default()
+        },
+        Material {
+            name: "carbon",
+            albedo: [0.88, 0.06, 0.00, 0.00],
+            specular: 10.0,
+            diffuse: Vec3::new(0.35, 0.35, 0.35),
+            texture: Some(t_coal),
+            normal_map: Some(n_coal),
+            ..Default::default()
+        },
+        Material {
+            name: "hierro",
+            // Las vetas son metal: algo mas de brillo que la roca que las
+            // rodea, con el reflejo concentrado.
+            albedo: [0.85, 0.18, 0.00, 0.00],
+            specular: 40.0,
+            diffuse: Vec3::new(0.50, 0.45, 0.42),
+            texture: Some(t_iron),
+            normal_map: Some(n_iron),
+            ..Default::default()
+        },
+        Material {
+            name: "diamante",
+            // Las gemas destellan: brillo muy concentrado y un poco de reflejo.
+            albedo: [0.80, 0.40, 0.08, 0.00],
+            specular: 120.0,
+            diffuse: Vec3::new(0.45, 0.60, 0.62),
+            texture: Some(t_diamond),
+            normal_map: Some(n_diamond),
             ..Default::default()
         },
     ])
@@ -517,6 +565,7 @@ pub fn build() -> Result<Scene, String> {
     let terrain = Terrain::new(seed);
 
     carve_island(&mut world, &terrain);
+    let ores = place_ores(&mut world, &terrain);
     carve_water_and_lava(&mut world);
     build_path(&mut world);
     build_cabin(&mut world);
@@ -549,6 +598,7 @@ pub fn build() -> Result<Scene, String> {
         .flat_map(|x| (WILD_Z.0..=WILD_Z.1).map(move |z| (x, z)))
         .map(|(x, z)| terrain_top(&terrain, x, z))
         .collect();
+    println!("minerales: {ores} bloques");
     println!(
         "terreno: semilla {}, {} arboles, zona libre {}x{} con alturas {}..{}",
         terrain.seed(),
@@ -611,6 +661,7 @@ pub fn build() -> Result<Scene, String> {
         ambient: Vec3::new(0.070, 0.088, 0.140),
         skybox,
         focus: FOCUS,
+        time: 0.0,
         grid,
     })
 }
@@ -636,6 +687,43 @@ fn carve_island(world: &mut VoxelWorld, terrain: &Terrain) {
             }
         }
     }
+}
+
+/// Vetas de mineral en la roca, como en Minecraft: carbon comun, hierro menos
+/// comun y diamante raro y solo en lo mas hondo.
+///
+/// Se reparten con el mismo hash del terreno, asi que cambian con la semilla.
+/// Se siembran en toda la roca, no solo en la superficie: las que quedan
+/// enterradas las descarta el `VoxelWorld` y no cuestan nada, y las que caen en
+/// el acantilado son las que se ven.
+fn place_ores(world: &mut VoxelWorld, terrain: &Terrain) -> usize {
+    let rx = ISLAND_RX.ceil() as i32;
+    let rz = ISLAND_RZ.ceil() as i32;
+    let mut placed = 0;
+
+    for x in -rx..=rx {
+        for z in -rz..=rz {
+            if !inside_island(x, z) {
+                continue;
+            }
+            let top = terrain_top(terrain, x, z);
+            for y in BEDROCK_Y..=(top - 3) {
+                let roll = terrain.hash01(x, z, 200 + (y - BEDROCK_Y) as u32);
+                let ore = if y <= BEDROCK_Y + 1 && roll < 0.025 {
+                    DIAMOND_ORE
+                } else if roll < 0.055 {
+                    IRON_ORE
+                } else if roll < 0.11 {
+                    COAL_ORE
+                } else {
+                    continue;
+                };
+                world.set(x, y, z, ore);
+                placed += 1;
+            }
+        }
+    }
+    placed
 }
 
 /// Excava el estanque y el lago de lava, y levanta la franja de obsidiana que
@@ -837,6 +925,13 @@ fn build_cabin(world: &mut VoxelWorld) {
     ];
     for (y, xs, zs) in roof {
         world.fill(xs, (y, y), zs, PLANKS);
+    }
+
+    // Chimenea de adoquin atravesando el faldon trasero del techo. Le da a la
+    // silueta de la cabaña un punto vertical, que sin ella es un bloque con
+    // tejado y nada mas.
+    for y in 5..=9 {
+        world.set(x1 - 1, y, z0 + 1, COBBLE);
     }
 }
 

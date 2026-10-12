@@ -90,6 +90,23 @@ fn offset_origin(point: &Vec3, normal: &Vec3, direction: &Vec3) -> Vec3 {
 // Sombreado
 // ---------------------------------------------------------------------------
 
+/// Distancia a partir de la cual empieza la niebla. Antes de ella todo se ve
+/// nitido; la camara orbita a unos 27-53 unidades del centro.
+const FOG_START: f32 = 30.0;
+/// Densidad de la niebla. Baja a proposito: solo tiene que separar lo cercano
+/// de lo lejano, no esconder nada.
+const FOG_DENSITY: f32 = 0.006;
+
+/// Coordenadas de textura del impacto, desplazadas segun el tiempo si el
+/// material esta animado.
+#[inline]
+fn material_uv(scene: &Scene, material: &Material, hit: &Intersect) -> (f32, f32) {
+    (
+        hit.u - material.uv_scroll[0] * scene.time,
+        hit.v - material.uv_scroll[1] * scene.time,
+    )
+}
+
 /// Color difuso del material en el punto de impacto: textura si tiene, color
 /// plano si no. Las caras de arriba y abajo pueden tener su propia textura.
 #[inline]
@@ -102,7 +119,10 @@ fn surface_color(scene: &Scene, material: &Material, hit: &Intersect) -> Vec3 {
         material.texture
     };
     match texture {
-        Some(id) => scene.textures.sample(id, hit.u, hit.v),
+        Some(id) => {
+            let (u, v) = material_uv(scene, material, hit);
+            scene.textures.sample(id, u, v)
+        }
         None => material.diffuse,
     }
 }
@@ -114,7 +134,8 @@ fn surface_emission(scene: &Scene, material: &Material, hit: &Intersect) -> Vec3
         // La mascara modula la emision por pixel: donde la mascara es negra el
         // bloque no brilla, donde es blanca brilla al maximo.
         Some(id) => {
-            let mask = scene.textures.sample(id, hit.u, hit.v);
+            let (u, v) = material_uv(scene, material, hit);
+            let mask = scene.textures.sample(id, u, v);
             Vec3::new(
                 material.emission.x * mask.x,
                 material.emission.y * mask.y,
@@ -135,7 +156,8 @@ fn surface_emission(scene: &Scene, material: &Material, hit: &Intersect) -> Vec3
 fn shading_normal(scene: &Scene, material: &Material, hit: &Intersect) -> Vec3 {
     match material.normal_map {
         Some(id) => {
-            let n = scene.textures.sample_normal(id, hit.u, hit.v);
+            let (u, v) = material_uv(scene, material, hit);
+            let n = scene.textures.sample_normal(id, u, v);
             normalize(&(hit.tangent * n.x + hit.bitangent * n.y + hit.normal * n.z))
         }
         None => hit.normal,
@@ -286,6 +308,15 @@ pub fn cast_ray(scene: &Scene, origin: &Vec3, direction: &Vec3, depth: u32) -> V
                 ) * weight;
             }
         }
+    }
+
+    // --- Niebla ------------------------------------------------------------
+    // Lo lejano se funde con el color del cielo que hay detras. Da profundidad:
+    // sin ella la orilla opuesta de la isla se ve igual de nitida que la
+    // cercana y la escena se aplana.
+    let fog = 1.0 - (-(hit.distance - FOG_START).max(0.0) * FOG_DENSITY).exp();
+    if fog > 0.0 {
+        color = color * (1.0 - fog) + scene.sky(direction) * fog;
     }
 
     color

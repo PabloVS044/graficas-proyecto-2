@@ -65,6 +65,11 @@ pub struct Material {
     /// brillen (por ejemplo, las vetas de un bloque de mineral luminoso)
     /// en vez de que emita la cara entera.
     pub emission_map: Option<TextureId>,
+
+    /// Velocidad con la que la textura se desplaza, en texturas por segundo
+    /// sobre (u, v). Anima los liquidos sin agregar geometria: el agua de la
+    /// cascada baja y la lava se arrastra. `[0, 0]` para lo que no se mueve.
+    pub uv_scroll: [f32; 2],
 }
 
 impl Default for Material {
@@ -81,6 +86,7 @@ impl Default for Material {
             texture_bottom: None,
             normal_map: None,
             emission_map: None,
+            uv_scroll: [0.0, 0.0],
         }
     }
 }
