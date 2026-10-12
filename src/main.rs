@@ -16,6 +16,7 @@ mod voxel;
 use camera::{Camera, CameraFrame};
 use framebuffer::Framebuffer;
 use raylib::prelude::*;
+use vector::Vec3;
 
 const WINDOW_WIDTH: i32 = 960;
 const WINDOW_HEIGHT: i32 = 640;
@@ -65,9 +66,9 @@ fn main() {
         .map(|n| n.get())
         .unwrap_or(4);
 
-    // Modo sin ventana: traza una orbita completa a una secuencia de PNG.
-    if std::env::args().any(|a| a == "--orbit") {
-        render_orbit(&mut scene, threads);
+    // Modo sin ventana: traza el recorrido del video a una secuencia de PNG.
+    if std::env::args().any(|a| a == "--video") {
+        render_video(&mut scene, threads);
         return;
     }
 
@@ -240,19 +241,114 @@ fn main() {
     }
 }
 
-/// Traza una vuelta completa alrededor del diorama y la guarda como una
-/// secuencia de PNG en `frames/`.
+/// Una toma del recorrido: hacia donde mira la camara y desde donde.
+struct Shot {
+    focus: Vec3,
+    yaw: f32,
+    pitch: f32,
+    distance: f32,
+    /// Segundos para llegar a esta toma desde la anterior.
+    travel: f32,
+    /// Segundos que se queda en la toma.
+    hold: f32,
+    /// Giro (radianes) mientras se queda: una toma completamente quieta se ve
+    /// como una foto, y con un poco de giro el relieve y los reflejos se mueven.
+    drift: f32,
+}
+
+/// El recorrido del video. Abre con una vuelta completa a la isla, se acerca a
+/// cada efecto uno por uno y cierra alejandose.
 ///
-/// Es lo que alimenta el video de la entrega. Se hace sin ventana a proposito:
-/// grabando la pantalla se captura lo que el refinamiento progresivo alcance a
-/// producir en cada instante, asi que los cuadros saldrian de calidades
-/// distintas. Aqui cada cuadro se traza completo antes de pasar al siguiente.
-///
-/// La trayectoria combina los dos movimientos: una vuelta entera de rotacion y
-/// dos ciclos de acercamiento y alejamiento, desfasados respecto a la rotacion
-/// para que se vean como movimientos separados y no como uno solo.
-fn render_orbit(scene: &mut scene::Scene, threads: usize) {
+/// Los angulos estan desenrollados (siempre crecen o casi) para que la
+/// interpolacion no de vueltas de mas entre dos tomas.
+fn tour() -> Vec<Shot> {
     use std::f32::consts::TAU;
+    let shot = |focus: (f32, f32, f32), yaw: f32, pitch: f32, distance: f32, travel: f32, hold: f32, drift: f32| Shot {
+        focus: Vec3::new(focus.0, focus.1, focus.2),
+        yaw,
+        pitch,
+        distance,
+        travel,
+        hold,
+        drift,
+    };
+    vec![
+        // Vuelta completa a la isla: skybox, terreno, arboles, cascada.
+        shot((-1.0, 1.5, 0.0), 0.7, 0.42, 45.0, 0.0, 9.0, TAU),
+        // Estanque desde arriba: el fondo de arena deformado por la refraccion.
+        shot((-9.5, 0.0, 7.0), TAU + 0.3, 0.75, 15.0, 3.0, 4.0, 0.25),
+        // Cascada de frente, con el mar de nubes detras.
+        shot((-7.5, -3.0, 15.0), TAU + 0.15, 0.12, 19.0, 3.0, 4.0, 0.35),
+        // Acantilado con minerales: relieve de los mapas normales.
+        shot((-1.0, -3.0, 15.0), TAU + 0.55, 0.08, 13.0, 2.5, 4.0, 0.25),
+        // Columnas de obsidiana reflejando la lava, desde el lado de la lava.
+        shot((-1.5, 1.5, 7.0), TAU + 1.35, 0.28, 15.0, 3.0, 4.5, 0.35),
+        // Ventanas de la cabaña: cristal que refracta y la lampara de dentro.
+        shot((-8.0, 2.5, -2.0), TAU + 0.15, 0.18, 14.0, 3.0, 4.0, 0.25),
+        // Zona de colinas procedural.
+        shot((8.0, 2.0, -5.0), TAU + 2.4, 0.38, 27.0, 3.5, 4.5, 0.4),
+        // A contraluz, mirando hacia el sol del skybox.
+        shot((-1.0, 3.0, 0.0), TAU + 4.15, 0.06, 50.0, 3.5, 4.0, 0.3),
+        // Cierre: se aleja y sube.
+        shot((-1.0, 1.5, 0.0), 2.0 * TAU + 0.7, 0.55, 60.0, 4.0, 2.0, 0.2),
+    ]
+}
+
+/// Cuanto sube (radianes de inclinacion) y se aleja la camara a la mitad de
+/// cada transicion.
+const TRAVEL_LIFT: f32 = 0.45;
+const TRAVEL_BACKOFF: f32 = 12.0;
+
+#[inline]
+fn smooth(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Camara del recorrido en el segundo `t`, o `None` si ya termino.
+fn tour_camera(shots: &[Shot], t: f32, camera: &mut Camera) -> Option<()> {
+    let mut start = 0.0;
+    // Estado al terminar la toma anterior (incluye su giro).
+    let mut prev = (shots[0].focus, shots[0].yaw, shots[0].pitch, shots[0].distance);
+    for shot in shots {
+        let travel_end = start + shot.travel;
+        let hold_end = travel_end + shot.hold;
+        if t < hold_end {
+            if t < travel_end {
+                let k = smooth((t - start) / shot.travel);
+                // Arco: a medio camino la camara sube y se aleja. Yendo en
+                // linea recta entre dos tomas cercanas al suelo atravesaba
+                // colinas y copas de arboles.
+                let arc = (std::f32::consts::PI * k).sin();
+                camera.center = prev.0 * (1.0 - k) + shot.focus * k;
+                camera.yaw = prev.1 + (shot.yaw - prev.1) * k;
+                camera.pitch = prev.2 + (shot.pitch - prev.2) * k + TRAVEL_LIFT * arc;
+                camera.distance = prev.3 + (shot.distance - prev.3) * k + TRAVEL_BACKOFF * arc;
+            } else {
+                let k = (t - travel_end) / shot.hold;
+                camera.center = shot.focus;
+                camera.yaw = shot.yaw + shot.drift * k;
+                camera.pitch = shot.pitch;
+                camera.distance = shot.distance;
+            }
+            return Some(());
+        }
+        prev = (shot.focus, shot.yaw + shot.drift, shot.pitch, shot.distance);
+        start = hold_end;
+    }
+    None
+}
+
+/// Traza el recorrido del video y lo guarda como una secuencia de PNG en
+/// `frames/`.
+///
+/// Se hace sin ventana a proposito: grabando la pantalla se captura lo que el
+/// refinamiento progresivo alcance a producir en cada instante, asi que los
+/// cuadros saldrian de calidades distintas. Aqui cada cuadro se traza completo
+/// antes de pasar al siguiente, y el tiempo de la animacion avanza a 30 cuadros
+/// por segundo, que es la velocidad a la que se va a reproducir.
+fn render_video(scene: &mut scene::Scene, threads: usize) {
+    const FPS: f32 = 30.0;
 
     let env_num = |name: &str, fallback: f32| {
         std::env::var(name)
@@ -261,38 +357,37 @@ fn render_orbit(scene: &mut scene::Scene, threads: usize) {
             .unwrap_or(fallback)
     };
 
-    let frames = env_num("ORBIT_FRAMES", 240.0) as usize;
-    let width = env_num("ORBIT_WIDTH", WINDOW_WIDTH as f32) as usize;
-    let height = env_num("ORBIT_HEIGHT", WINDOW_HEIGHT as f32) as usize;
-    let samples = env_num("ORBIT_SAMPLES", 2.0) as u32;
-    let near = env_num("ORBIT_NEAR", 27.0);
-    let far = env_num("ORBIT_FAR", 53.0);
+    let width = env_num("VIDEO_WIDTH", 1280.0) as usize;
+    let height = env_num("VIDEO_HEIGHT", 720.0) as usize;
+    let samples = env_num("VIDEO_SAMPLES", 2.0) as u32;
+    // Trazar solo uno de cada N cuadros: sirve para revisar el recorrido
+    // rapido antes de trazarlo completo.
+    let step = env_num("VIDEO_STEP", 1.0).max(1.0) as usize;
 
     if let Err(err) = std::fs::create_dir_all("frames") {
         eprintln!("no se pudo crear el directorio frames/: {err}");
         std::process::exit(1);
     }
 
-    let mut framebuffer = Framebuffer::new(width, height);
-    let mut camera = Camera::new(scene.focus, far);
+    let shots = tour();
+    let total_secs: f32 = shots.iter().map(|s| s.travel + s.hold).sum();
+    let frames = (total_secs * FPS) as usize;
 
-    println!("trazando {frames} cuadros de {width}x{height} con {samples}x{samples} muestras");
+    let mut framebuffer = Framebuffer::new(width, height);
+    let mut camera = Camera::new(scene.focus, shots[0].distance);
+
+    println!(
+        "trazando {} de {frames} cuadros ({total_secs:.0} s) de {width}x{height} con {samples}x{samples} muestras",
+        frames.div_ceil(step)
+    );
     let started = std::time::Instant::now();
 
-    for index in 0..frames {
-        let t = index as f32 / frames as f32;
-
-        camera.yaw = TAU * t;
-        // Dos ciclos de zoom por vuelta. El coseno arranca y termina en el mismo
-        // punto, asi que el video se puede repetir en bucle sin salto.
-        let zoom = 0.5 - 0.5 * (TAU * 2.0 * t).cos();
-        camera.distance = far + (near - far) * zoom;
-        // La altura tambien se mueve, desfasada un cuarto de ciclo, para que la
-        // camara no describa un circulo plano.
-        camera.pitch = 0.42 + 0.24 * (TAU * t).sin();
-        // El video va a 30 cuadros por segundo: asi el agua y la lava se
-        // mueven a la velocidad real con la que se van a ver.
-        scene.time = index as f32 / 30.0;
+    for index in (0..frames).step_by(step) {
+        let t = index as f32 / FPS;
+        if tour_camera(&shots, t, &mut camera).is_none() {
+            break;
+        }
+        scene.time = t;
 
         let frame = CameraFrame::new(&camera, width, height);
         render::render(&mut framebuffer, scene, &frame, samples, threads);
@@ -303,11 +398,12 @@ fn render_orbit(scene: &mut scene::Scene, threads: usize) {
             std::process::exit(1);
         }
 
-        if index % 10 == 0 || index + 1 == frames {
-            let done = index + 1;
+        let done = index / step + 1;
+        if done % 30 == 0 || index + step >= frames {
+            let todo = frames.div_ceil(step);
             let elapsed = started.elapsed().as_secs_f32();
-            let remaining = elapsed / done as f32 * (frames - done) as f32;
-            println!("  {done}/{frames}  ({elapsed:.0}s transcurridos, ~{remaining:.0}s restantes)");
+            let remaining = elapsed / done as f32 * (todo - done.min(todo)) as f32;
+            println!("  {done}/{todo}  ({elapsed:.0}s transcurridos, ~{remaining:.0}s restantes)");
         }
     }
 

@@ -32,7 +32,7 @@ impl Framebuffer {
         self.width * 4
     }
 
-    /// Guarda el buffer como PNG. Lo usan los cuadros de `--orbit`.
+    /// Guarda el buffer como PNG. Lo usan los cuadros de `--video`.
     pub fn save_png(&self, path: &str) -> Result<(), String> {
         use raylib::prelude::*;
 

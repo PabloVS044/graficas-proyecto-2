@@ -91,7 +91,7 @@ fn offset_origin(point: &Vec3, normal: &Vec3, direction: &Vec3) -> Vec3 {
 // ---------------------------------------------------------------------------
 
 /// Distancia a partir de la cual empieza la niebla. Antes de ella todo se ve
-/// nitido; la camara orbita a unos 27-53 unidades del centro.
+/// nitido; en la vista general la camara queda a unas 45-60 unidades del centro.
 const FOG_START: f32 = 30.0;
 /// Densidad de la niebla. Baja a proposito: solo tiene que separar lo cercano
 /// de lo lejano, no esconder nada.

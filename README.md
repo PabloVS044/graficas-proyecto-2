@@ -15,7 +15,13 @@
 
 ## Video
 
-<!-- TODO: enlace al video -->
+<p align="center">
+  <a href="https://youtu.be/nnB4AlkhQGs">
+    <img src="https://i.ytimg.com/vi/nnB4AlkhQGs/hqdefault.jpg" alt="Video del diorama" width="640">
+  </a>
+</p>
+
+<p align="center"><a href="https://youtu.be/nnB4AlkhQGs">Ver el video en YouTube</a></p>
 
 ---
 
@@ -77,11 +83,13 @@ falta `--release`.
 | T | Pausar o reanudar la animacion del agua y la lava (encendida por defecto; en pausa, la imagen quieta se refina hasta 2x2 muestras) |
 | H | Mostrar u ocultar el HUD |
 
-Para el video hay un modo sin ventana que traza una vuelta completa como
-secuencia de cuadros:
+Para el video hay un modo sin ventana que traza un recorrido de camara (una
+vuelta a la isla y acercamientos al estanque, la cascada, el acantilado, la
+obsidiana, la cabaña, las colinas y el sol) como secuencia de cuadros a
+1280x720, con el agua y la lava animadas a velocidad real:
 
 ```bash
-cargo run -- --orbit
+cargo run -- --video
 ffmpeg -framerate 30 -i frames/%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 diorama.mp4
 ```
 
