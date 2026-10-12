@@ -17,7 +17,11 @@
 
 <p align="center">
   <a href="https://youtu.be/nnB4AlkhQGs">
-    <img src="https://i.ytimg.com/vi/nnB4AlkhQGs/hqdefault.jpg" alt="Video del diorama" width="640">
+    
+
+https://github.com/user-attachments/assets/cc86035e-5414-46bd-89f4-b8f5f88e1a0a
+
+
   </a>
 </p>
 
