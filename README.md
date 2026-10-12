@@ -68,8 +68,8 @@ regresa es el del pixel.
 ### Correr
 
 ```bash
-git clone https://github.com/PabloVS044/graficas-proy2.git
-cd graficas-proy2
+git clone https://github.com/PabloVS044/graficas-proyecto-2.git
+cd graficas-proyecto-2
 cargo run
 ```
 
