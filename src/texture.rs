@@ -48,6 +48,28 @@ impl CpuTexture {
         let y = (v * self.height as f32).floor() as i32;
         self.texel(x, y)
     }
+
+    /// Muestreo bilineal sin repetir: en el borde se queda con el ultimo texel.
+    ///
+    /// Solo lo usa el skybox. Ahi el pixelado si estorba: el cielo cubre media
+    /// pantalla y cada texel se estira sobre muchos pixeles. Repetir la textura
+    /// tampoco sirve, porque el texel de enfrente pertenece al otro lado de la
+    /// cara y en las aristas del cubo apareceria una linea de otro color.
+    #[inline]
+    pub fn sample_bilinear(&self, u: f32, v: f32) -> Vec3 {
+        let max_x = (self.width - 1) as f32;
+        let max_y = (self.height - 1) as f32;
+        let x = (u * self.width as f32 - 0.5).clamp(0.0, max_x);
+        let y = (v * self.height as f32 - 0.5).clamp(0.0, max_y);
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let (x0, y0) = (x0 as i32, y0 as i32);
+        let x1 = (x0 + 1).min(max_x as i32);
+        let y1 = (y0 + 1).min(max_y as i32);
+        let top = self.texel(x0, y0) * (1.0 - fx) + self.texel(x1, y0) * fx;
+        let bottom = self.texel(x0, y1) * (1.0 - fx) + self.texel(x1, y1) * fx;
+        top * (1.0 - fy) + bottom * fy
+    }
 }
 
 /// Coleccion de texturas cargadas, compartida de solo lectura entre los hilos.
@@ -133,6 +155,11 @@ impl TextureManager {
     #[inline]
     pub fn sample(&self, id: TextureId, u: f32, v: f32) -> Vec3 {
         self.textures[id].sample(u, v)
+    }
+
+    #[inline]
+    pub fn sample_bilinear(&self, id: TextureId, u: f32, v: f32) -> Vec3 {
+        self.textures[id].sample_bilinear(u, v)
     }
 
     /// Decodifica un texel de normal map a un vector en espacio tangente.

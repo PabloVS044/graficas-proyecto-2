@@ -7,6 +7,7 @@ mod material;
 mod ray_intersect;
 mod render;
 mod scene;
+mod skybox;
 mod texture;
 mod vector;
 mod voxel;

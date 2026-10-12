@@ -8,6 +8,7 @@ use crate::cube::Cube;
 use crate::light::Light;
 use crate::material::{Material, MaterialId};
 use crate::ray_intersect::{Intersect, RayIntersect};
+use crate::skybox::Skybox;
 use crate::texture::TextureManager;
 use crate::voxel::VoxelWorld;
 use crate::vector::Vec3;
@@ -22,10 +23,8 @@ pub struct Scene {
     /// directa quede en negro absoluto, que se ve plano y artificial.
     pub ambient: Vec3,
 
-    /// Colores del cielo: lo que ve un rayo que no choca con nada.
-    pub sky_top: Vec3,
-    pub sky_horizon: Vec3,
-    pub sky_bottom: Vec3,
+    /// El cielo: lo que ve un rayo que no choca con nada.
+    pub skybox: Skybox,
 
     /// Punto alrededor del cual conviene orbitar la camara.
     pub focus: Vec3,
@@ -81,28 +80,13 @@ impl Scene {
         &self.materials[id]
     }
 
-    /// Color del cielo para un rayo que se escapa de la escena.
-    ///
-    /// Tres franjas en vez de un degradado simple: el naranja del atardecer
-    /// tiene que quedarse pegado al horizonte, no subir hasta el cenit. La
-    /// transicion usa `smoothstep` para que no se vea la linea de corte.
+    /// Color del cielo para un rayo que se escapa de la escena. Los reflejos
+    /// y la refraccion terminan aqui tambien, asi que el agua y la obsidiana
+    /// reflejan las nubes sin codigo extra.
     #[inline]
     pub fn sky(&self, direction: &Vec3) -> Vec3 {
-        let y = direction.y;
-        if y >= 0.0 {
-            let t = smoothstep(0.0, 0.45, y);
-            self.sky_horizon * (1.0 - t) + self.sky_top * t
-        } else {
-            let t = smoothstep(0.0, 0.25, -y);
-            self.sky_horizon * (1.0 - t) + self.sky_bottom * t
-        }
+        self.skybox.sample(&self.textures, direction)
     }
-}
-
-#[inline]
-fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
-    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +458,12 @@ fn terrain_top(x: i32, z: i32) -> i32 {
     ((n * 3.4 * edge.powf(0.45)) - 0.45).round().clamp(0.0, 3.0) as i32
 }
 
+/// Posicion de la luz principal del atardecer.
+const SUN_POSITION: Vec3 = Vec3::new(40.0, 23.0, 26.0);
+
+/// Punto alrededor del cual orbita la camara.
+const FOCUS: Vec3 = Vec3::new(-1.0, 1.5, 0.0);
+
 /// Construye el diorama completo.
 pub fn build() -> Result<Scene, String> {
     let mut textures = TextureManager::new();
@@ -498,6 +488,15 @@ pub fn build() -> Result<Scene, String> {
     let (cubes, culled) = world.into_cubes(&materials);
 
     let lights = build_lights(&lamparas);
+
+    // El disco del sol va en la direccion de la luz principal, vista desde el
+    // centro del diorama: asi las sombras salen del lado donde se ve el sol.
+    let skybox = Skybox::load(
+        &mut textures,
+        "assets/skybox",
+        SUN_POSITION - FOCUS,
+        Vec3::new(14.0, 8.0, 4.0),
+    )?;
 
     let grid = Grid::build(&cubes);
 
@@ -552,10 +551,8 @@ pub fn build() -> Result<Scene, String> {
         // Relleno azulado: es la luz del cielo del atardecer rebotando. Que sea
         // frio hace que el naranja de la lava resalte por contraste.
         ambient: Vec3::new(0.070, 0.088, 0.140),
-        sky_top: Vec3::new(0.06, 0.10, 0.30),
-        sky_horizon: Vec3::new(0.95, 0.42, 0.20),
-        sky_bottom: Vec3::new(0.10, 0.08, 0.10),
-        focus: Vec3::new(-1.0, 1.5, 0.0),
+        skybox,
+        focus: FOCUS,
         grid,
     })
 }
@@ -1021,7 +1018,7 @@ fn build_lights(lamparas: &[(i32, i32, i32)]) -> Vec<Light> {
         // para que las caras horizontales se queden sin luz (con el sol casi en
         // el horizonte el techo y el pasto reciben `n . l` casi cero y el
         // diorama se ve iluminado solo de costado).
-        Vec3::new(40.0, 23.0, 26.0),
+        SUN_POSITION,
         Vec3::new(1.00, 0.60, 0.33),
         1.05,
     )];
