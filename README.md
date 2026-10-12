@@ -100,29 +100,6 @@ ffmpeg -framerate 30 -i frames/%04d.png -c:v libx264 -pix_fmt yuv420p -crf 18 di
 Con `SEED=<numero> cargo run` se genera otra isla: otras colinas, otros arboles
 y otros minerales.
 
-## La escena
-
-Vista desde arriba (x hacia la derecha, z hacia abajo, el frente de la isla abajo):
-
-```
-     ┌──────────────────────────────────────────────────────────┐
-     │  pinos y colinas                                         │
-     │       ╔══════════╗           ZONA LIBRE 16x16            │
-     │       ║  cabaña  ║ chimenea   solo terreno procedural:   │
-     │       ╚════╦═════╝            colinas de hasta 6 bloques │
-     │            ║ camino de adoquin                           │
-     │  ═════════════════════════╗                              │
-     │   ~~~~~~~~~~~~~~   ▓▓   █████████                        │
-     │   ~ estanque   ~   ▓▓   █ lava  █                        │
-     │   ~ con muelle ~   ▓▓   █████████                        │
-     │   ~~~~~~╥~~~~~~    ▲    reborde de adoquin               │
-     │         ║ canal    columnas de obsidiana                 │
-     └─────────╨─────────────────────────────────────────────────┘
-               ↓ cascada que cae mas alla del fondo de la isla
-```
-
-**9399 bloques colocados → 2555 cubos visibles.** El 73% restante esta enterrado
-y se descarta sin que la imagen cambie en un solo pixel.
 
 ## Materiales
 
